@@ -3,21 +3,21 @@ import { PrismaService } from '../shared/prisma.service';
 import { IsNumber, IsString, IsOptional } from 'class-validator';
 
 export class CreateMatchDto {
-  @IsNumber() phase_id: number;
-  @IsNumber() match_number: number;
+  @IsNumber() phase_id!: number;
+  @IsNumber() match_number!: number;
   @IsOptional() @IsString() group_name?: string;
   @IsOptional() @IsString() team_local?: string;
   @IsOptional() @IsString() team_visitor?: string;
 }
 
 export class SetResultDto {
-  @IsNumber() goals_local: number;
-  @IsNumber() goals_visitor: number;
+  @IsNumber() goals_local!: number;
+  @IsNumber() goals_visitor!: number;
 }
 
 export class UpdateMatchTeamsDto {
-  @IsString() team_local: string;
-  @IsString() team_visitor: string;
+  @IsString() team_local!: string;
+  @IsString() team_visitor!: string;
 }
 
 @Injectable()

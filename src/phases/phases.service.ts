@@ -10,9 +10,9 @@ import {
 import { Type } from "class-transformer";
 
 export class CreatePhaseDto {
-  @IsNumber() campaign_id: number;
-  @IsNumber() number: number;
-  @IsString() name: string;
+  @IsNumber() campaign_id!: number;
+  @IsNumber() number!: number;
+  @IsString() name!: string;
   @IsOptional() @IsString() date_from?: string;
   @IsOptional() @IsString() date_to?: string;
   @IsOptional() @IsNumber() predictions_required?: number;
@@ -28,21 +28,21 @@ export interface PhaseRule {
 }
 
 export class QualifiedTeamDto {
-  @IsString() team: string;
+  @IsString() team!: string;
 }
 
 export class MatchupDto {
   @IsOptional() match_number?: number;
-  @IsString() team_local: string;
-  @IsString() team_visitor: string;
+  @IsString() team_local!: string;
+  @IsString() team_visitor!: string;
 }
 
 export class GenerateNextPhaseDto {
-  @IsNumber() current_phase_id: number;
+  @IsNumber() current_phase_id!: number;
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QualifiedTeamDto)
-  qualified_teams: QualifiedTeamDto[];
+  qualified_teams!: QualifiedTeamDto[];
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

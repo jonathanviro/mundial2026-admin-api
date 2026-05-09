@@ -1,6 +1,6 @@
 // registrations.controller.ts
 import { Controller, Get, Query, UseGuards, Request, Res } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { RegistrationsService } from './registrations.service';
 import { JwtAuthGuard, RolesGuard, Roles, UserRole } from '../shared/guards/roles.guard';
 
@@ -18,7 +18,7 @@ export class RegistrationsController {
 
   @Get('winners')
   winners(@Request() req, @Query('campaign_id') cid?: string, @Query('phase_id') pid?: string) {
-    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : +cid;
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
     return this.service.findWinners(campaign_id, pid ? +pid : undefined);
   }
 
@@ -36,7 +36,7 @@ export class RegistrationsController {
     @Query('phase_id') pid?: string,
     @Query('totem_id') tid?: string,
   ) {
-    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : +cid;
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
     const buffer = await this.service.exportExcel(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

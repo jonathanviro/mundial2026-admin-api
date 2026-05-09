@@ -5,9 +5,9 @@ import * as bcrypt from 'bcryptjs';
 import { IsEmail, IsString, IsOptional, IsEnum, IsNumber } from 'class-validator';
 
 export class CreateUserDto {
-  @IsEmail() email: string;
-  @IsString() password: string;
-  @IsString() nombres: string;
+  @IsEmail() email!: string;
+  @IsString() password!: string;
+  @IsString() nombres!: string;
   @IsOptional() @IsEnum(UserRole) role?: UserRole;
   @IsOptional() @IsNumber() campaign_id?: number;
 }

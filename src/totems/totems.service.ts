@@ -3,10 +3,10 @@ import { PrismaService } from '../shared/prisma.service';
 import { IsString, IsOptional, IsNumber } from 'class-validator';
 
 export class CreateTotemDto {
-  @IsString() code: string;
-  @IsString() name: string;
+  @IsString() code!: string;
+  @IsString() name!: string;
   @IsOptional() @IsString() location?: string;
-  @IsNumber() campaign_id: number;
+  @IsNumber() campaign_id!: number;
 }
 
 export class UpdateTotemDto {

@@ -11,7 +11,7 @@ export class ParticipantsController {
 
   @Get()
   findAll(@Request() req, @Query('campaign_id') cid?: string, @Query('search') search?: string) {
-    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : +cid;
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : +(cid ?? 0);
     return this.service.findAll(campaign_id, search);
   }
 }

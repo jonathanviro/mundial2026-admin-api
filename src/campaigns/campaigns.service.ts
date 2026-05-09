@@ -3,8 +3,8 @@ import { PrismaService } from '../shared/prisma.service';
 import { IsString, IsOptional } from 'class-validator';
 
 export class CreateCampaignDto {
-  @IsString() name: string;
-  @IsString() slug: string;
+  @IsString() name!: string;
+  @IsString() slug!: string;
   @IsOptional() @IsString() logo_url?: string;
   @IsOptional() @IsString() bg_screen1_url?: string;
   @IsOptional() @IsString() bg_screen2_url?: string;

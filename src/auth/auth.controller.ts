@@ -4,8 +4,8 @@ import { IsEmail, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../shared/guards/roles.guard';
 
 class LoginDto {
-  @IsEmail() email: string;
-  @IsString() password: string;
+  @IsEmail() email!: string;
+  @IsString() password!: string;
 }
 
 @Controller('auth')

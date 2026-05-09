@@ -54,7 +54,7 @@ export class SyncService {
       has_update: true,
       server_version: phase.version,
       server_phase_id: phase.id,
-      campaign: { id: campaign.id, name: campaign.name, slug: campaign.slug, bg_screen1_url: campaign.bg_screen1_url, bg_screen2_url: campaign.bg_screen2_url },
+      campaign: campaign ? { id: campaign.id, name: campaign.name, slug: campaign.slug, bg_screen1_url: campaign.bg_screen1_url, bg_screen2_url: campaign.bg_screen2_url } : null,
       phase: { id: phase.id, number: phase.number, name: phase.name, date_from: phase.date_from, date_to: phase.date_to, predictions_required: phase.predictions_required, min_correct_to_win: phase.min_correct_to_win, version: phase.version },
       matches,
     };
@@ -67,7 +67,7 @@ export class SyncService {
     });
     if (!phase) return { results: items.map(i => ({ local_id: i.local_id, status: 'no_phase' })) };
 
-    const results = [];
+    const results: { local_id: any; factura: any; status: string; message?: string }[] = [];
     for (const item of items) {
       try {
         const existingFact = await this.prisma.registration.findUnique({ where: { factura: item.factura } });
