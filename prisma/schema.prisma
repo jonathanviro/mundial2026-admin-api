@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Campaigns ─────────────────────────────────────────────────────────────
+model Campaign {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique
+  slug            String    @unique
+  logo_url        String?
+  bg_screen1_url  String?   // imagen pantalla publicidad tótem
+  bg_screen2_url  String?   // imagen pantalla formulario tótem
+  active          Boolean   @default(true)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  totems        Totem[]
+  users         User[]
+  participants  Participant[]
+  phases        Phase[]
+
+  @@map("campaigns")
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  password_hash String
+  nombres       String
+  role          UserRole  @default(CAMPAIGN_ADMIN)
+  campaign_id   Int?
+  active        Boolean   @default(true)
+  created_at    DateTime  @default(now())
+
+  campaign      Campaign? @relation(fields: [campaign_id], references: [id], onDelete: SetNull)
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPERADMIN
+  CAMPAIGN_ADMIN
+}
+
+// ── Totems ────────────────────────────────────────────────────────────────
+model Totem {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique
+  name            String
+  location        String?
+  campaign_id     Int
+  secret_key      String?
+  version_data    Int       @default(0)
+  last_sync       DateTime?
+  last_heartbeat  DateTime?
+  active          Boolean   @default(true)
+  created_at      DateTime  @default(now())
+
+  campaign        Campaign      @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  registrations   Registration[]
+
+  @@map("totems")
+}
+
+// ── Phases ────────────────────────────────────────────────────────────────
+model Phase {
+  id                    Int       @id @default(autoincrement())
+  campaign_id           Int
+  number                Int       // 1=grupos, 2=16avos, 3=8avos, 4=4tos, 5=semis, 6=final
+  name                  String
+  date_from             String?
+  date_to               String?
+  active                Boolean   @default(false)
+  published             Boolean   @default(false)
+  version               Int       @default(1)
+  predictions_required  Int       @default(3)
+  min_correct_to_win    Int       @default(3)
+  created_at            DateTime  @default(now())
+
+  campaign      Campaign        @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  matches       Match[]
+  registrations Registration[]
+
+  @@map("phases")
+}
+
+// ── Matches ───────────────────────────────────────────────────────────────
+model Match {
+  id            Int       @id @default(autoincrement())
+  phase_id      Int
+  match_number  Int
+  group_name    String?
+  team_local    String?
+  team_visitor  String?
+  goals_local   Int?
+  goals_visitor Int?
+  finished      Boolean   @default(false)
+
+  phase         Phase       @relation(fields: [phase_id], references: [id], onDelete: Cascade)
+  predictions   Prediction[]
+
+  @@map("matches")
+}
+
+// ── Participants ──────────────────────────────────────────────────────────
+model Participant {
+  id          Int       @id @default(autoincrement())
+  campaign_id Int
+  cedula      String
+  nombres     String
+  apellidos   String
+  telefono    String?
+  email       String?
+  created_at  DateTime  @default(now())
+
+  campaign      Campaign       @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  registrations Registration[]
+
+  @@unique([campaign_id, cedula])
+  @@map("participants")
+}
+
+// ── Registrations ─────────────────────────────────────────────────────────
+model Registration {
+  id                  Int       @id @default(autoincrement())
+  factura             String    @unique
+  participant_id      Int
+  totem_id            Int
+  phase_id            Int
+  local_id            String?   @unique  // UUID del tótem para deduplicación
+  registered_at       DateTime?
+  synced_at           DateTime?
+  is_winner           Boolean   @default(false)
+  correct_predictions Int       @default(0)
+  champion_team       String?
+  created_at          DateTime  @default(now())
+
+  participant   Participant  @relation(fields: [participant_id], references: [id], onDelete: Cascade)
+  totem         Totem        @relation(fields: [totem_id], references: [id], onDelete: Cascade)
+  phase         Phase        @relation(fields: [phase_id], references: [id], onDelete: Cascade)
+  predictions   Prediction[]
+
+  @@map("registrations")
+}
+
+// ── Predictions ───────────────────────────────────────────────────────────
+model Prediction {
+  id              Int     @id @default(autoincrement())
+  registration_id Int
+  match_id        Int
+  goals_local     Int
+  goals_visitor   Int
+  is_correct      Boolean @default(false)
+
+  registration  Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+  match         Match        @relation(fields: [match_id], references: [id], onDelete: Cascade)
+
+  @@map("predictions")
+}
