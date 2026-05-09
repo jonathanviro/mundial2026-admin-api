@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p tsconfig.json",
-    "start": "npx prisma db push --accept-data-loss && npx prisma db seed && node dist/main",
+    "start": "npm run build && npx prisma db push --accept-data-loss && npx prisma db seed && node dist/main",
     "start:dev": "ts-node src/main.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
