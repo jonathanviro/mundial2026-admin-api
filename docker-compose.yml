@@ -5,8 +5,8 @@ services:
       - '5433:5432'
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: planning_db
+      POSTGRES_PASSWORD: MySecretPass
+      POSTGRES_DB: mundial_2026_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
