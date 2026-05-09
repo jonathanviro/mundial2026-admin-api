@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -p tsconfig.json",
-    "start": "npx prisma db push --accept-data-loss && npx prisma db seed && node dist/main",
+    "start": "npm run build && npx prisma db push --accept-data-loss && npx prisma db seed && node dist/main",
     "start:dev": "ts-node src/main.ts",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -35,7 +35,8 @@
     "passport-local": "^1.0.0",
     "prisma": "^6.0.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "@databases/pg-test": "^3.1.2",
@@ -47,7 +48,6 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "ts-jest": "^29.4.9",
-    "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   },
   "prisma": {
