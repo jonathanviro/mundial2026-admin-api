@@ -6,6 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { UsersModule } from './users/users.module';
 import { TotemsModule } from './totems/totems.module';
+import { EmployeesModule } from './employees/employees.module';
+import { WebModule } from './web/web.module';
 import { PhasesModule } from './phases/phases.module';
 import { MatchesModule } from './matches/matches.module';
 import { ParticipantsModule } from './participants/participants.module';
@@ -21,6 +23,8 @@ import { SyncModule } from './sync/sync.module';
     CampaignsModule,
     UsersModule,
     TotemsModule,
+    EmployeesModule,
+    WebModule,
     PhasesModule,
     MatchesModule,
     ParticipantsModule,

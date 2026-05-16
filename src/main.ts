@@ -6,10 +6,29 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : ['*'];
+
+  // Support wildcard subdomains by converting *.domain.com to regex
+  const originFn = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin || corsOrigins.includes('*')) return callback(null, true);
+    const allowed = corsOrigins.some(pattern => {
+      if (pattern === origin) return true;
+      if (pattern.startsWith('*.')) {
+        const suffix = pattern.slice(1); // .domain.com
+        return origin.endsWith(suffix);
+      }
+      return false;
+    });
+    callback(null, allowed);
+  };
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: originFn,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-totem-key'],
+    credentials: true,
   });
 
   app.useGlobalPipes(

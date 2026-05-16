@@ -9,20 +9,23 @@ datasource db {
 
 // ── Campaigns ─────────────────────────────────────────────────────────────
 model Campaign {
-  id              Int       @id @default(autoincrement())
-  name            String    @unique
-  slug            String    @unique
-  logo_url        String?
-  bg_screen1_url  String?   // imagen pantalla publicidad tótem
-  bg_screen2_url  String?   // imagen pantalla formulario tótem
-  active          Boolean   @default(true)
-  created_at      DateTime  @default(now())
-  updated_at      DateTime  @updatedAt
+  id                 Int       @id @default(autoincrement())
+  name               String    @unique
+  slug               String    @unique
+  logo_url           String?
+  bg_screen1_url     String?   // imagen pantalla publicidad tótem
+  bg_screen2_url     String?   // imagen pantalla formulario tótem
+  web_bg_url         String?   // fondo para versión web empleados
+  control_employees  Boolean   @default(false)  // true=solo empleados pre-registrados
+  active             Boolean   @default(true)
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
 
   totems        Totem[]
   users         User[]
   participants  Participant[]
   phases        Phase[]
+  employees     Employee[]
 
   @@map("campaigns")
 }
@@ -66,6 +69,26 @@ model Totem {
   registrations   Registration[]
 
   @@map("totems")
+}
+
+// ── Employees ──────────────────────────────────────────────────────────────
+model Employee {
+  id          String    @id @default(uuid())
+  code        String    // código alfanumérico del empleado, único por campaña
+  nombres     String
+  apellidos   String?
+  email       String?
+  telefono    String?
+  factura     String?   // opcional, por si alguna empresa lo requiere
+  campaign_id Int
+  active      Boolean   @default(true)
+  created_at  DateTime  @default(now())
+
+  campaign      Campaign       @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  registrations Registration[]
+
+  @@unique([campaign_id, code])
+  @@map("employees")
 }
 
 // ── Phases ────────────────────────────────────────────────────────────────
@@ -126,26 +149,36 @@ model Participant {
   @@map("participants")
 }
 
+// ── Registration Source ────────────────────────────────────────────────────
+enum RegistrationSource {
+  TOTEM
+  WEB
+}
+
 // ── Registrations ─────────────────────────────────────────────────────────
 model Registration {
-  id                  Int       @id @default(autoincrement())
-  factura             String    @unique
-  participant_id      Int
-  totem_id            Int
+  id                  Int                 @id @default(autoincrement())
+  factura             String?             @unique  // null para empleados web
+  participant_id      Int?                         // null para empleados web
+  totem_id            Int?                         // null para empleados web
+  employee_id         String?                         // null para tótems físicos
   phase_id            Int
-  local_id            String?   @unique  // UUID del tótem para deduplicación
+  source              RegistrationSource  @default(TOTEM)
+  local_id            String?             @unique  // UUID del tótem para deduplicación
   registered_at       DateTime?
   synced_at           DateTime?
-  is_winner           Boolean   @default(false)
-  correct_predictions Int       @default(0)
+  is_winner           Boolean             @default(false)
+  correct_predictions Int                 @default(0)
   champion_team       String?
-  created_at          DateTime  @default(now())
+  created_at          DateTime            @default(now())
 
-  participant   Participant  @relation(fields: [participant_id], references: [id], onDelete: Cascade)
-  totem         Totem        @relation(fields: [totem_id], references: [id], onDelete: Cascade)
+  participant   Participant? @relation(fields: [participant_id], references: [id], onDelete: Cascade)
+  totem         Totem?       @relation(fields: [totem_id], references: [id], onDelete: Cascade)
+  employee      Employee?    @relation(fields: [employee_id], references: [id], onDelete: Cascade)
   phase         Phase        @relation(fields: [phase_id], references: [id], onDelete: Cascade)
   predictions   Prediction[]
 
+  @@unique([employee_id, phase_id])  // un empleado por fase
   @@map("registrations")
 }
 

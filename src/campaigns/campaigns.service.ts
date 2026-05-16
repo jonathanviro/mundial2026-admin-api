@@ -6,16 +6,20 @@ export class CreateCampaignDto {
   @IsString() name!: string;
   @IsString() slug!: string;
   @IsOptional() @IsString() logo_url?: string;
+  @IsOptional() @IsString() web_bg_url?: string;
   @IsOptional() @IsString() bg_screen1_url?: string;
   @IsOptional() @IsString() bg_screen2_url?: string;
+  @IsOptional() control_employees?: boolean;
 }
 
 export class UpdateCampaignDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() logo_url?: string;
+  @IsOptional() @IsString() web_bg_url?: string;
   @IsOptional() @IsString() bg_screen1_url?: string;
   @IsOptional() @IsString() bg_screen2_url?: string;
   @IsOptional() active?: boolean;
+  @IsOptional() control_employees?: boolean;
 }
 
 @Injectable()
@@ -42,7 +46,11 @@ export class CampaignsService {
   async update(id: number, dto: UpdateCampaignDto) {
     const campaign = await this.prisma.campaign.findUnique({ where: { id } });
     if (!campaign) throw new NotFoundException('Campaña no encontrada');
-    return this.prisma.campaign.update({ where: { id }, data: dto });
+    // Filter out empty/null/undefined values to avoid overwriting existing data
+    const data = Object.fromEntries(
+      Object.entries(dto).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+    );
+    return this.prisma.campaign.update({ where: { id }, data });
   }
 
   async remove(id: number) {

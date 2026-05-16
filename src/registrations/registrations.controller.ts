@@ -1,8 +1,8 @@
-// registrations.controller.ts
 import { Controller, Get, Query, UseGuards, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RegistrationsService } from './registrations.service';
 import { JwtAuthGuard, RolesGuard, Roles, UserRole } from '../shared/guards/roles.guard';
+import type { RegistrationSource } from '@prisma/client';
 
 @Controller('registrations')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -11,9 +11,15 @@ export class RegistrationsController {
   constructor(private service: RegistrationsService) {}
 
   @Get()
-  findAll(@Request() req, @Query('campaign_id') cid?: string, @Query('phase_id') pid?: string, @Query('totem_id') tid?: string) {
+  findAll(
+    @Request() req,
+    @Query('campaign_id') cid?: string,
+    @Query('phase_id') pid?: string,
+    @Query('totem_id') tid?: string,
+    @Query('source') source?: RegistrationSource,
+  ) {
     const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
-    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined);
+    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source);
   }
 
   @Get('winners')

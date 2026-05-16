@@ -1,21 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../shared/prisma.service';
 import * as ExcelJS from 'exceljs';
+import type { RegistrationSource } from '@prisma/client';
 
 @Injectable()
 export class RegistrationsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(campaign_id?: number, phase_id?: number, totem_id?: number) {
+  findAll(campaign_id?: number, phase_id?: number, totem_id?: number, source?: RegistrationSource) {
+    const campaignFilter = campaign_id
+      ? { OR: [
+          { totem: { campaign_id } },
+          { employee: { campaign_id } },
+        ] }
+      : {};
     return this.prisma.registration.findMany({
       where: {
-        ...(campaign_id ? { totem: { campaign_id } } : {}),
+        ...(campaign_id ? campaignFilter : {}),
         ...(phase_id ? { phase_id } : {}),
         ...(totem_id ? { totem_id } : {}),
+        ...(source ? { source } : {}),
       },
       include: {
         participant: true,
         totem: { select: { id: true, name: true, code: true } },
+        employee: { select: { id: true, code: true, nombres: true, apellidos: true, email: true, telefono: true } },
         phase: { select: { id: true, name: true, number: true } },
         predictions: { include: { match: true } },
       },
@@ -24,15 +33,24 @@ export class RegistrationsService {
   }
 
   findWinners(campaign_id?: number, phase_id?: number) {
+    // Support both totem and web winners
+    const campaignFilter = campaign_id
+      ? { OR: [
+          { totem: { campaign_id } },
+          { employee: { campaign_id } },
+        ] }
+      : {};
+
     return this.prisma.registration.findMany({
       where: {
         is_winner: true,
-        ...(campaign_id ? { totem: { campaign_id } } : {}),
+        ...(Object.keys(campaignFilter).length ? campaignFilter : {}),
         ...(phase_id ? { phase_id } : {}),
       },
       include: {
         participant: true,
         totem: { select: { id: true, name: true, code: true } },
+        employee: { select: { id: true, code: true, nombres: true, apellidos: true } },
         phase: { select: { id: true, name: true } },
       },
       orderBy: { correct_predictions: 'desc' },
@@ -40,10 +58,18 @@ export class RegistrationsService {
   }
 
   async stats(campaign_id?: number) {
-    const where = campaign_id ? { totem: { campaign_id } } : {};
+    // Count both totem and web registrations for this campaign
+    const campaignFilter = campaign_id
+      ? { OR: [
+          { totem: { campaign_id } },
+          { employee: { campaign_id } },
+        ] }
+      : {};
+    const whereClause = Object.keys(campaignFilter).length ? campaignFilter : {};
+
     const [total, winners] = await Promise.all([
-      this.prisma.registration.count({ where }),
-      this.prisma.registration.count({ where: { ...where, is_winner: true } }),
+      this.prisma.registration.count({ where: whereClause }),
+      this.prisma.registration.count({ where: { ...whereClause, is_winner: true } }),
     ]);
     return { total_registrations: total, total_winners: winners };
   }
@@ -58,8 +84,9 @@ export class RegistrationsService {
     const headerFont: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
 
     ws.columns = [
+      { header: 'Origen',         key: 'origen',     width: 12 },
       { header: 'Factura',        key: 'factura',    width: 18 },
-      { header: 'Cédula',         key: 'cedula',     width: 15 },
+      { header: 'Código Empl.',   key: 'emp_code',   width: 15 },
       { header: 'Nombres',        key: 'nombres',    width: 20 },
       { header: 'Apellidos',      key: 'apellidos',  width: 20 },
       { header: 'Teléfono',       key: 'telefono',   width: 15 },
@@ -85,14 +112,16 @@ export class RegistrationsService {
       const fmt = (p: any) => p
         ? `${p.match?.team_local || '?'} ${p.goals_local}-${p.goals_visitor} ${p.match?.team_visitor || '?'}${p.is_correct ? ' ✓' : ''}`
         : '';
+      const emp = reg.employee;
       const row = ws.addRow({
-        factura: reg.factura,
-        cedula: reg.participant?.cedula,
-        nombres: reg.participant?.nombres,
-        apellidos: reg.participant?.apellidos,
-        telefono: reg.participant?.telefono,
-        email: reg.participant?.email,
-        totem: reg.totem?.name,
+        origen: reg.source === 'WEB' ? 'Web' : 'Tótem',
+        factura: reg.factura || '',
+        emp_code: emp?.code || '',
+        nombres: emp?.nombres || reg.participant?.nombres || '',
+        apellidos: emp?.apellidos || reg.participant?.apellidos || '',
+        telefono: emp?.telefono || reg.participant?.telefono || '',
+        email: emp?.email || reg.participant?.email || '',
+        totem: reg.totem?.name || '',
         fase: reg.phase?.name,
         fecha: reg.registered_at ? new Date(reg.registered_at).toLocaleString('es-EC') : '',
         pred1: fmt(preds[0]), pred2: fmt(preds[1]), pred3: fmt(preds[2]),
@@ -106,7 +135,7 @@ export class RegistrationsService {
       }
     });
 
-    ws.autoFilter = { from: 'A1', to: 'N1' };
+    ws.autoFilter = { from: 'A1', to: 'O1' };
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
   }
