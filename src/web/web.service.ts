@@ -20,6 +20,16 @@ import { Type } from "class-transformer";
 import { randomUUID } from "crypto";
 import { RegistrationSource } from "@prisma/client";
 
+function getTomorrowDateString(): string {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split("T")[0];
+}
+
+function getTodayDateString(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
 // ── Rate limiter simple (en memoria) ────────────────────────────────
 const loginAttempts = new Map<string, { count: number; blockUntil: number }>();
 
@@ -71,6 +81,7 @@ export class CampaignByDomainDto {
 
 export class LoginDto {
   @IsString() code!: string;
+  @IsString() password!: string;
   @IsNumber() campaign_id!: number;
   @IsOptional() @IsString() nombres?: string;
   @IsOptional() @IsString() apellidos?: string;
@@ -86,6 +97,7 @@ class PredictionItemDto {
 
 export class SubmitPredictionsDto {
   @IsOptional() @IsString() champion_team?: string;
+  @IsOptional() @IsString() prediction_date?: string;
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PredictionItemDto)
@@ -177,47 +189,35 @@ export class WebService {
       throw new UnauthorizedException("Campaña no activa");
     }
 
-    if (campaign.control_employees) {
-      // Solo trabajadores pre-registrados
-      const employee = await this.prisma.employee.findUnique({
-        where: {
-          campaign_id_code: { campaign_id: dto.campaign_id, code: dto.code },
-        },
-      });
-      if (!employee || !employee.active) {
-        recordAttempt(ipKey);
-        throw new UnauthorizedException(
-          "No hemos encontrado tu código de trabajador, contáctate con tu empresa para solucionarlo",
-        );
-      }
-      clearRateLimit(ipKey);
-      const token = this.jwt.sign({
-        sub: employee.id,
-        type: "employee",
-        campaign_id: employee.campaign_id,
-      });
-      return {
-        access_token: token,
-        employee: {
-          id: employee.id,
-          code: employee.code,
-          nombres: employee.nombres,
-          apellidos: employee.apellidos,
-          email: employee.email,
-          telefono: employee.telefono,
-        },
-      };
-    }
-
-    // Modo abierto: auto-crear o login
+    // Buscar empleado por código
     let employee = await this.prisma.employee.findUnique({
       where: {
         campaign_id_code: { campaign_id: dto.campaign_id, code: dto.code },
       },
     });
 
-    if (!employee) {
-      // Auto-crear
+    if (employee) {
+      if (!employee.password) {
+        recordAttempt(ipKey);
+        throw new UnauthorizedException(
+          "No tienes una contraseña configurada. Contacta con tu administrador.",
+        );
+      }
+      if (dto.password !== employee.password) {
+        recordAttempt(ipKey);
+        throw new UnauthorizedException(
+          "Código de trabajador o contraseña incorrectos",
+        );
+      }
+      if (!employee.active) {
+        throw new UnauthorizedException("Trabajador desactivado");
+      }
+    } else if (campaign.control_employees) {
+      recordAttempt(ipKey);
+      throw new UnauthorizedException(
+        "No hemos encontrado tu código de trabajador, contáctate con tu empresa para solucionarlo",
+      );
+    } else {
       employee = await this.prisma.employee.create({
         data: {
           code: dto.code,
@@ -226,10 +226,9 @@ export class WebService {
           email: dto.email,
           telefono: dto.telefono,
           campaign_id: dto.campaign_id,
+          password: dto.password,
         },
       });
-    } else if (!employee.active) {
-      throw new UnauthorizedException("Trabajador desactivado");
     }
 
     clearRateLimit(ipKey);
@@ -268,15 +267,44 @@ export class WebService {
     });
     if (!phase) return { phase: null, matches: [], already_submitted: false };
 
-    const matches = await this.prisma.match.findMany({
+    const allMatches = await this.prisma.match.findMany({
       where: { phase_id: phase.id },
       orderBy: { match_number: "asc" },
     });
 
-    const existing = await this.prisma.registration.findUnique({
-      where: {
-        employee_id_phase_id: { employee_id: employeeId, phase_id: phase.id },
-      },
+    if (phase.daily_predictions) {
+      const tomorrow = getTomorrowDateString();
+      const today = getTodayDateString();
+
+      const matches = allMatches.filter(
+        (m) => m.date === tomorrow && !m.finished,
+      );
+
+      const existing = await this.prisma.registration.findFirst({
+        where: { employee_id: employeeId, prediction_date: tomorrow },
+      });
+
+      return {
+        phase: {
+          id: phase.id,
+          number: phase.number,
+          name: phase.name,
+          date_from: phase.date_from,
+          date_to: phase.date_to,
+          daily_predictions: true,
+          predictions_required: phase.predictions_required,
+          min_correct_to_win: phase.min_correct_to_win,
+          version: phase.version,
+        },
+        matches,
+        all_matches: allMatches,
+        prediction_date: tomorrow,
+        already_submitted: !!existing,
+      };
+    }
+
+    const existing = await this.prisma.registration.findFirst({
+      where: { employee_id: employeeId, phase_id: phase.id, prediction_date: null },
     });
 
     return {
@@ -286,11 +314,13 @@ export class WebService {
         name: phase.name,
         date_from: phase.date_from,
         date_to: phase.date_to,
+        daily_predictions: false,
         predictions_required: phase.predictions_required,
         min_correct_to_win: phase.min_correct_to_win,
         version: phase.version,
       },
-      matches,
+      matches: allMatches,
+      all_matches: allMatches,
       already_submitted: !!existing,
     };
   }
@@ -311,18 +341,68 @@ export class WebService {
     });
     if (!phase) throw new BadRequestException("No hay una fase activa");
 
-    // Verificar que no haya enviado ya predicciones para esta fase
-    const existing = await this.prisma.registration.findUnique({
-      where: {
-        employee_id_phase_id: { employee_id: employeeId, phase_id: phase.id },
-      },
+    const predictionDate = dto.prediction_date || null;
+
+    if (phase.daily_predictions) {
+      const tomorrow = getTomorrowDateString();
+      if (!dto.prediction_date || dto.prediction_date !== tomorrow) {
+        throw new BadRequestException(
+          `Solo puedes enviar predicciones para la fecha ${tomorrow}`,
+        );
+      }
+
+      const existing = await this.prisma.registration.findFirst({
+        where: { employee_id: employeeId, prediction_date: tomorrow },
+      });
+      if (existing)
+        throw new ConflictException(
+          "Ya enviaste tus predicciones para hoy. Vuelve mañana.",
+        );
+
+      if (!dto.predictions || dto.predictions.length < 1) {
+        throw new BadRequestException("Debes enviar al menos 1 predicción");
+      }
+
+      const matchesCount = await this.prisma.match.count({
+        where: { phase_id: phase.id, date: tomorrow, finished: false },
+      });
+      if (dto.predictions.length > matchesCount) {
+        throw new BadRequestException(
+          `Máximo ${matchesCount} predicciones para esta fecha`,
+        );
+      }
+
+      const registration = await this.prisma.registration.create({
+        data: {
+          source: RegistrationSource.WEB,
+          employee_id: employeeId,
+          phase_id: phase.id,
+          local_id: randomUUID(),
+          prediction_date: tomorrow,
+          registered_at: new Date(),
+          predictions: {
+            create: dto.predictions.map((p) => ({
+              match_id: p.match_id,
+              goals_local: p.goals_local,
+              goals_visitor: p.goals_visitor,
+            })),
+          },
+        },
+        include: { predictions: true },
+      });
+
+      return registration;
+    }
+
+    // Modo clásico
+    const existing = await this.prisma.registration.findFirst({
+      where: { employee_id: employeeId, phase_id: phase.id, prediction_date: null },
     });
     if (existing)
       throw new ConflictException(
         "Ya enviaste tus predicciones para esta fase",
       );
 
-    // Validar que envió suficientes predicciones
     if (
       !dto.predictions ||
       dto.predictions.length < phase.predictions_required
@@ -364,8 +444,11 @@ export class WebService {
     const registrations = await this.prisma.registration.findMany({
       where: { employee_id: employeeId },
       include: {
-        phase: { select: { id: true, name: true, number: true } },
-        predictions: { include: { match: true } },
+        phase: { select: { id: true, name: true, number: true, daily_predictions: true } },
+        predictions: {
+          include: { match: true },
+          orderBy: { id: "asc" },
+        },
       },
       orderBy: { registered_at: "desc" },
     });
@@ -373,18 +456,81 @@ export class WebService {
     return registrations;
   }
 
+  async getRanking(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, campaign_id: true },
+    });
+    if (!employee) throw new UnauthorizedException("Trabajador no encontrado");
+
+    const phase = await this.prisma.phase.findFirst({
+      where: {
+        campaign_id: employee.campaign_id,
+        active: true,
+        published: true,
+        daily_predictions: true,
+      },
+    });
+    if (!phase) return { ranking: [], phase: null };
+
+    // Aggregate points per employee for this phase
+    const result = await this.prisma.registration.groupBy({
+      by: ["employee_id"],
+      where: { phase_id: phase.id, source: RegistrationSource.WEB },
+      _sum: { total_points: true },
+      orderBy: { _sum: { total_points: "desc" } },
+    });
+
+    // Fetch employee codes for display
+    const employeeIds = result.map((r) => r.employee_id).filter(Boolean) as string[];
+    const employees = await this.prisma.employee.findMany({
+      where: { id: { in: employeeIds } },
+      select: { id: true, code: true, nombres: true },
+    });
+    const empMap = new Map(employees.map((e) => [e.id, e]));
+
+    const ranking = result
+      .filter((r) => r.employee_id)
+      .map((r, i) => {
+        const emp = empMap.get(r.employee_id!);
+        return {
+          position: i + 1,
+          code: emp?.code || "—",
+          nombres: emp?.nombres || "—",
+          total_points: r._sum.total_points || 0,
+        };
+      })
+      .sort((a, b) => b.total_points - a.total_points || a.code.localeCompare(b.code))
+      .map((r, i) => ({ ...r, position: i + 1 }));
+
+    return { ranking, phase: { id: phase.id, name: phase.name } };
+  }
+
+  async getInstructions() {
+    return {
+      instructions: [
+        "Ingresa con tu código de trabajador y la contraseña que te proporcionó tu empresa.",
+        "La contraseña es de uso personal e intransferible. No la compartas con nadie.",
+        "El manejo y custodia de tu contraseña es tu completa responsabilidad.",
+        "Cada día podrás predecir los marcadores de los partidos del día siguiente.",
+        "Mínimo 1 predicción, máximo la cantidad de partidos programados para ese día.",
+        "Solo puedes enviar una predicción por día. Los partidos del día de hoy no están disponibles.",
+        "Puntaje: 2 puntos por marcador exacto, 1 punto por resultado correcto (ganador o empate).",
+        "Los resultados se actualizan diariamente y el ranking se recalcula automáticamente.",
+        "En caso de empate en puntos, se ordena por código de trabajador.",
+      ],
+    };
+  }
+
   async writeLog(
     employeeId: string,
     logData: { action: string; metadata?: any },
   ) {
-    // Store in a simple structure - can be extended
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
       select: { id: true },
     });
     if (!employee) return;
-    // Log entries are stored via the RegistrationsService or can be saved
-    // For simplicity, we return ok
     return { ok: true };
   }
 }

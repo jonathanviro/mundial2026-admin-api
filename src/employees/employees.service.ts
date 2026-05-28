@@ -5,7 +5,18 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../shared/prisma.service";
 import { IsString, IsOptional, IsNumber, IsArray } from "class-validator";
-import { Type } from "class-transformer";
+import { randomBytes } from "crypto";
+
+const PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generatePassword(length = 8): string {
+  let password = "";
+  const bytes = randomBytes(length);
+  for (let i = 0; i < length; i++) {
+    password += PASSWORD_CHARS[bytes[i] % PASSWORD_CHARS.length];
+  }
+  return password;
+}
 
 export class CreateEmployeeDto {
   @IsString() code!: string;
@@ -64,7 +75,11 @@ export class EmployeesService {
       throw new ConflictException(
         "El código de trabajador ya existe en esta campaña",
       );
-    return this.prisma.employee.create({ data: dto });
+    const password = generatePassword();
+    const employee = await this.prisma.employee.create({
+      data: { ...dto, password },
+    });
+    return { ...employee, password_generated: password };
   }
 
   async update(id: string, dto: UpdateEmployeeDto) {
@@ -84,29 +99,39 @@ export class EmployeesService {
   }
 
   async bulkCreate(codes: string[], campaign_id: number) {
+    const passwords: { code: string; password: string }[] = [];
     let created = 0;
     let skipped = 0;
-    const errors: { code: string; reason: string }[] = [];
 
-    for (const code of codes) {
-      try {
-        const exists = await this.prisma.employee.findUnique({
-          where: {
-            campaign_id_code: { campaign_id, code },
-          },
-        });
-        if (exists) {
-          skipped++;
-          continue;
-        }
-        await this.prisma.employee.create({
-          data: { code, nombres: code, campaign_id },
-        });
-        created++;
-      } catch (err: any) {
-        errors.push({
-          code,
-          reason: err.message || "Error desconocido",
+    const existing = await this.prisma.employee.findMany({
+      where: { campaign_id, code: { in: codes } },
+      select: { code: true },
+    });
+    const existingSet = new Set(existing.map((e) => e.code));
+    const newCodes = codes.filter((c) => {
+      if (existingSet.has(c)) { skipped++; return false; }
+      return true;
+    });
+
+    const employeesData: {
+      code: string;
+      nombres: string;
+      campaign_id: number;
+      password: string;
+    }[] = [];
+
+    for (const code of newCodes) {
+      const password = generatePassword();
+      passwords.push({ code, password });
+      employeesData.push({ code, nombres: code, campaign_id, password });
+    }
+
+    if (employeesData.length > 0) {
+      created = employeesData.length;
+      const chunkSize = 100;
+      for (let i = 0; i < employeesData.length; i += chunkSize) {
+        await this.prisma.employee.createMany({
+          data: employeesData.slice(i, i + chunkSize),
         });
       }
     }
@@ -115,7 +140,53 @@ export class EmployeesService {
       created,
       skipped,
       total: codes.length,
-      errors: errors.length > 0 ? errors : undefined,
+      passwords: passwords.length > 0 ? passwords : undefined,
     };
+  }
+
+  async cleanupDuplicates(campaign_id: number) {
+    const all = await this.prisma.employee.findMany({
+      where: { campaign_id },
+      orderBy: { created_at: "asc" },
+      select: { id: true, code: true, created_at: true },
+    });
+
+    const seen = new Set<string>();
+    const toDeactivate: string[] = [];
+
+    for (const emp of all) {
+      if (seen.has(emp.code)) {
+        toDeactivate.push(emp.id);
+      } else {
+        seen.add(emp.code);
+      }
+    }
+
+    if (toDeactivate.length > 0) {
+      await this.prisma.employee.updateMany({
+        where: { id: { in: toDeactivate } },
+        data: { active: false },
+      });
+    }
+
+    return { duplicates_removed: toDeactivate.length, total_kept: seen.size };
+  }
+
+  async resetPassword(id: string) {
+    const emp = await this.prisma.employee.findUnique({ where: { id } });
+    if (!emp) throw new NotFoundException("Trabajador no encontrado");
+    const password = generatePassword();
+    await this.prisma.employee.update({
+      where: { id },
+      data: { password },
+    });
+    return { password };
+  }
+
+  async exportPasswords(campaign_id: number) {
+    return this.prisma.employee.findMany({
+      where: { campaign_id, active: true, password: { not: null } },
+      select: { code: true, nombres: true, password: true },
+    });
   }
 }

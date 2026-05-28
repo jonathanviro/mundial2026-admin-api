@@ -16,6 +16,11 @@ export class WebController {
     return this.service.login(dto);
   }
 
+  @Get('instructions')
+  getInstructions() {
+    return this.service.getInstructions();
+  }
+
   @UseGuards(EmployeeAuthGuard)
   @Get('phase')
   getPhase(@Request() req) {
@@ -32,6 +37,12 @@ export class WebController {
   @Get('my-predictions')
   myPredictions(@Request() req) {
     return this.service.myPredictions(req.employee.id);
+  }
+
+  @UseGuards(EmployeeAuthGuard)
+  @Get('ranking')
+  getRanking(@Request() req) {
+    return this.service.getRanking(req.employee.id);
   }
 
   @UseGuards(EmployeeAuthGuard)

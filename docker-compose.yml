@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: MySecretPass
-      POSTGRES_DB: mundial_2026_db
+      POSTGRES_DB: mundial_2026_db_develop
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
