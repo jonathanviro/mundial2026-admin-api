@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { EmployeesService, CreateEmployeeDto, UpdateEmployeeDto, BulkCreateEmployeeDto } from './employees.service';
 import { JwtAuthGuard, RolesGuard, Roles, UserRole } from '../shared/guards/roles.guard';
 
@@ -41,5 +41,27 @@ export class EmployeesController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.service.remove(id);
+  }
+
+  @Post(':id/reset-password')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  resetPassword(@Param('id') id: string) {
+    return this.service.resetPassword(id);
+  }
+
+  @Post('cleanup-duplicates')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  cleanupDuplicates(@Request() req, @Body('campaign_id') cid?: number) {
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : cid;
+    if (!campaign_id) throw new BadRequestException('campaign_id es requerido');
+    return this.service.cleanupDuplicates(campaign_id);
+  }
+
+  @Post('export-passwords')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  exportPasswords(@Request() req, @Body('campaign_id') cid?: number) {
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : cid;
+    if (!campaign_id) throw new BadRequestException('campaign_id es requerido');
+    return this.service.exportPasswords(campaign_id);
   }
 }

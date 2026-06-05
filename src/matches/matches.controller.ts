@@ -15,23 +15,23 @@ export class MatchesController {
   }
 
   @Post()
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
   create(@Body() dto: CreateMatchDto) { return this.service.create(dto); }
 
   @Post('bulk')
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
   bulk(@Body() body: { matches: CreateMatchDto[] }) {
     return this.service.bulkCreate(body.matches);
   }
 
   @Put(':id/teams')
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
   updateTeams(@Param('id') id: string, @Body() dto: UpdateMatchTeamsDto) {
     return this.service.updateTeams(+id, dto);
   }
 
   @Put(':id/result')
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
   setResult(@Param('id') id: string, @Body() dto: SetResultDto) {
     return this.service.setResult(+id, dto);
   }

@@ -17,6 +17,7 @@ export class CreatePhaseDto {
   @IsOptional() @IsString() date_to?: string;
   @IsOptional() @IsNumber() predictions_required?: number;
   @IsOptional() @IsNumber() min_correct_to_win?: number;
+  @IsOptional() daily_predictions?: boolean;
 }
 
 export interface PhaseRule {
@@ -129,6 +130,7 @@ export class PhasesService {
         name: dto.name || rules.name || `Fase ${dto.number}`,
         date_from: dto.date_from,
         date_to: dto.date_to,
+        daily_predictions: dto.daily_predictions ?? false,
         predictions_required:
           dto.predictions_required ?? rules.predictions_required ?? 3,
         min_correct_to_win:

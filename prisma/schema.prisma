@@ -73,16 +73,17 @@ model Totem {
 
 // ── Employees ──────────────────────────────────────────────────────────────
 model Employee {
-  id          String    @id @default(uuid())
-  code        String    // código alfanumérico del empleado, único por campaña
-  nombres     String
-  apellidos   String?
-  email       String?
-  telefono    String?
-  factura     String?   // opcional, por si alguna empresa lo requiere
-  campaign_id Int
-  active      Boolean   @default(true)
-  created_at  DateTime  @default(now())
+  id            String    @id @default(uuid())
+  code          String    // código alfanumérico del empleado, único por campaña
+  nombres       String
+  apellidos     String?
+  email         String?
+  telefono      String?
+  factura       String?   // opcional, por si alguna empresa lo requiere
+  password      String?   // contraseña del empleado (texto plano, interno empresa)
+  campaign_id   Int
+  active        Boolean   @default(true)
+  created_at    DateTime  @default(now())
 
   campaign      Campaign       @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
   registrations Registration[]
@@ -99,6 +100,7 @@ model Phase {
   name                  String
   date_from             String?
   date_to               String?
+  daily_predictions     Boolean   @default(false)  // true = predicciones diarias en web
   active                Boolean   @default(false)
   published             Boolean   @default(false)
   version               Int       @default(1)
@@ -124,6 +126,7 @@ model Match {
   goals_local   Int?
   goals_visitor Int?
   finished      Boolean   @default(false)
+  date          String?   // fecha del partido "2026-06-11" (para predicciones diarias)
 
   phase         Phase       @relation(fields: [phase_id], references: [id], onDelete: Cascade)
   predictions   Prediction[]
@@ -169,6 +172,8 @@ model Registration {
   synced_at           DateTime?
   is_winner           Boolean             @default(false)
   correct_predictions Int                 @default(0)
+  total_points        Int                 @default(0)  // suma de puntos de predicciones
+  prediction_date     String?             // "2026-06-12" para modo diario, null en clásico
   champion_team       String?
   created_at          DateTime            @default(now())
 
@@ -178,7 +183,7 @@ model Registration {
   phase         Phase        @relation(fields: [phase_id], references: [id], onDelete: Cascade)
   predictions   Prediction[]
 
-  @@unique([employee_id, phase_id])  // un empleado por fase
+  @@index([phase_id, prediction_date])
   @@map("registrations")
 }
 
@@ -190,6 +195,7 @@ model Prediction {
   goals_local     Int
   goals_visitor   Int
   is_correct      Boolean @default(false)
+  points          Int     @default(0)   // 0=incorrecta, 1=solo resultado, 2=marcador exacto
 
   registration  Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
   match         Match        @relation(fields: [match_id], references: [id], onDelete: Cascade)
