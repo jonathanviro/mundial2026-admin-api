@@ -30,6 +30,13 @@ function getTodayDateString(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function getNextAvailableDate(matches: { date: string | null; finished: boolean }[], today: string): string | null {
+  const nextMatch = matches
+    .filter((m) => !m.finished && m.date && m.date > today)
+    .sort((a, b) => a.date!.localeCompare(b.date!))[0];
+  return nextMatch?.date || null;
+}
+
 // ── Rate limiter simple (en memoria) ────────────────────────────────
 const loginAttempts = new Map<string, { count: number; blockUntil: number }>();
 
@@ -273,16 +280,18 @@ export class WebService {
     });
 
     if (phase.daily_predictions) {
-      const tomorrow = getTomorrowDateString();
       const today = getTodayDateString();
+      const nextDate = getNextAvailableDate(allMatches, today);
 
-      const matches = allMatches.filter(
-        (m) => m.date === tomorrow && !m.finished,
-      );
+      const matches = nextDate
+        ? allMatches.filter((m) => m.date === nextDate && !m.finished)
+        : [];
 
-      const existing = await this.prisma.registration.findFirst({
-        where: { employee_id: employeeId, prediction_date: tomorrow },
-      });
+      const existing = nextDate
+        ? await this.prisma.registration.findFirst({
+            where: { employee_id: employeeId, prediction_date: nextDate },
+          })
+        : null;
 
       return {
         phase: {
@@ -298,7 +307,7 @@ export class WebService {
         },
         matches,
         all_matches: allMatches,
-        prediction_date: tomorrow,
+        prediction_date: nextDate,
         already_submitted: !!existing,
       };
     }
@@ -344,19 +353,28 @@ export class WebService {
     const predictionDate = dto.prediction_date || null;
 
     if (phase.daily_predictions) {
-      const tomorrow = getTomorrowDateString();
-      if (!dto.prediction_date || dto.prediction_date !== tomorrow) {
+      const today = getTodayDateString();
+      const allMatches = await this.prisma.match.findMany({
+        where: { phase_id: phase.id },
+      });
+      const nextDate = getNextAvailableDate(allMatches, today);
+
+      if (!nextDate) {
+        throw new BadRequestException("No hay partidos disponibles para predecir");
+      }
+
+      if (!dto.prediction_date || dto.prediction_date !== nextDate) {
         throw new BadRequestException(
-          `Solo puedes enviar predicciones para la fecha ${tomorrow}`,
+          `Solo puedes enviar predicciones para la fecha ${nextDate}`,
         );
       }
 
       const existing = await this.prisma.registration.findFirst({
-        where: { employee_id: employeeId, prediction_date: tomorrow },
+        where: { employee_id: employeeId, prediction_date: nextDate },
       });
       if (existing)
         throw new ConflictException(
-          "Ya enviaste tus predicciones para hoy. Vuelve mañana.",
+          "Ya enviaste tus predicciones para esta fecha.",
         );
 
       if (!dto.predictions || dto.predictions.length < 1) {
@@ -364,7 +382,7 @@ export class WebService {
       }
 
       const matchesCount = await this.prisma.match.count({
-        where: { phase_id: phase.id, date: tomorrow, finished: false },
+        where: { phase_id: phase.id, date: nextDate, finished: false },
       });
       if (dto.predictions.length > matchesCount) {
         throw new BadRequestException(
@@ -378,7 +396,7 @@ export class WebService {
           employee_id: employeeId,
           phase_id: phase.id,
           local_id: randomUUID(),
-          prediction_date: tomorrow,
+          prediction_date: nextDate,
           registered_at: new Date(),
           predictions: {
             create: dto.predictions.map((p) => ({
