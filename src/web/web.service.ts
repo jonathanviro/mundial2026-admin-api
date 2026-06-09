@@ -377,16 +377,12 @@ export class WebService {
           "Ya enviaste tus predicciones para esta fecha.",
         );
 
-      if (!dto.predictions || dto.predictions.length < 1) {
-        throw new BadRequestException("Debes enviar al menos 1 predicción");
-      }
-
       const matchesCount = await this.prisma.match.count({
         where: { phase_id: phase.id, date: nextDate, finished: false },
       });
-      if (dto.predictions.length > matchesCount) {
+      if (!dto.predictions || dto.predictions.length !== matchesCount) {
         throw new BadRequestException(
-          `Máximo ${matchesCount} predicciones para esta fecha`,
+          `Debes predecir los ${matchesCount} partidos de esta fecha para poder enviar (completaste ${dto.predictions?.length || 0} de ${matchesCount}).`,
         );
       }
 
@@ -536,6 +532,7 @@ export class WebService {
         "Puntaje: 2 puntos por marcador exacto, 1 punto por resultado correcto (ganador o empate).",
         "Los resultados se actualizan diariamente y el ranking se recalcula automáticamente.",
         "En caso de empate en puntos, se ordena por código de trabajador.",
+        "Al confirmar y enviar las predicciones, ya no podrás modificarlas. Antes de confirmar asegúrate de tener todas las predicciones que desees.",
       ],
     };
   }
