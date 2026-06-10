@@ -36,4 +36,10 @@ export class TotemsController {
   update(@Param('id') id: string, @Body() dto: UpdateTotemDto) {
     return this.service.update(+id, dto);
   }
+
+  @Get(':id/logs')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  getLogs(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.service.getLogs(+id, limit ? +limit : 50);
+  }
 }

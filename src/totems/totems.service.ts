@@ -63,9 +63,25 @@ export class TotemsService {
     const totems = await this.findAll(campaign_id);
     const now = new Date();
     const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const totemIds = totems.map((t) => t.id);
+    const counts = await this.prisma.registration.groupBy({
+      by: ['totem_id'],
+      where: { totem_id: { in: totemIds } },
+      _count: true,
+    });
+    const countMap = new Map(counts.map((c) => [c.totem_id, c._count]));
     return totems.map((t) => ({
       ...t,
       online: !!(t.last_heartbeat && t.last_heartbeat > fiveMinAgo),
+      registrations_count: countMap.get(t.id) || 0,
     }));
+  }
+
+  async getLogs(totemId: number, limit = 50) {
+    return this.prisma.totemSyncLog.findMany({
+      where: { totem_id: totemId },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+    });
   }
 }

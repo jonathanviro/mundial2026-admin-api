@@ -67,6 +67,7 @@ model Totem {
 
   campaign        Campaign      @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
   registrations   Registration[]
+  sync_logs       TotemSyncLog[]
 
   @@map("totems")
 }
@@ -201,4 +202,19 @@ model Prediction {
   match         Match        @relation(fields: [match_id], references: [id], onDelete: Cascade)
 
   @@map("predictions")
+}
+
+// ── Totem Sync Logs ─────────────────────────────────────────────────────
+model TotemSyncLog {
+  id         Int      @id @default(autoincrement())
+  totem_id   Int
+  event      String   // "heartbeat" | "push" | "pull" | "error"
+  details    String?  // mensaje descriptivo
+  registros  Int      @default(0)
+  created_at DateTime @default(now())
+
+  totem      Totem    @relation(fields: [totem_id], references: [id], onDelete: Cascade)
+
+  @@index([totem_id, created_at])
+  @@map("totem_sync_logs")
 }
