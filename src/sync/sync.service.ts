@@ -11,6 +11,12 @@ export class SyncService {
     return totem;
   }
 
+  private async logSyncEvent(totemId: number, event: string, details: string, registros = 0) {
+    await this.prisma.totemSyncLog.create({
+      data: { totem_id: totemId, event, details, registros },
+    });
+  }
+
   async heartbeat(totem_code: string, version_data: number) {
     const totem = await this.verifyTotem(totem_code);
     await this.prisma.totem.update({
@@ -21,6 +27,7 @@ export class SyncService {
       where: { campaign_id: totem.campaign_id, active: true, published: true },
       orderBy: { version: 'desc' },
     });
+    await this.logSyncEvent(totem.id, 'heartbeat', `Heartbeat v${version_data}`, 0);
     return {
       status: 'ok',
       server_version: phase?.version || 0,
@@ -38,7 +45,10 @@ export class SyncService {
     
     // Check for update: version OR phase_id changed
     const hasUpdate = client_version < phase.version || client_phase_id !== phase.id;
-    if (!hasUpdate) return { has_update: false, server_version: phase.version, server_phase_id: phase.id };
+    if (!hasUpdate) {
+      await this.logSyncEvent(totem.id, 'heartbeat', `Ya actualizado v${phase.version}`, 0);
+      return { has_update: false, server_version: phase.version, server_phase_id: phase.id };
+    }
     
     const [matches, campaign] = await Promise.all([
       this.prisma.match.findMany({ where: { phase_id: phase.id }, orderBy: { match_number: 'asc' } }),
@@ -49,6 +59,7 @@ export class SyncService {
       where: { id: totem.id },
       data: { last_sync: new Date(), last_heartbeat: new Date(), version_data: phase.version },
     });
+    await this.logSyncEvent(totem.id, 'pull', `Descargó ${matches.length} partidos v${phase.version}`, 0);
     
     return {
       has_update: true,
@@ -68,6 +79,8 @@ export class SyncService {
     if (!phase) return { results: items.map(i => ({ local_id: i.local_id, status: 'no_phase' })) };
 
     const results: { local_id: any; factura: any; status: string; message?: string }[] = [];
+    let okCount = 0;
+    let errorCount = 0;
     for (const item of items) {
       try {
         const existingFact = await this.prisma.registration.findUnique({ where: { factura: item.factura } });
@@ -79,20 +92,21 @@ export class SyncService {
             });
           }
           results.push({ local_id: item.local_id, factura: item.factura, status: 'duplicate_factura' });
+          okCount++;
           continue;
         }
 
         const existingLocal = item.local_id
           ? await this.prisma.registration.findUnique({ where: { local_id: item.local_id } })
           : null;
-        if (existingLocal) { results.push({ local_id: item.local_id, factura: item.factura, status: 'already_synced' }); continue; }
+        if (existingLocal) { results.push({ local_id: item.local_id, factura: item.factura, status: 'already_synced' }); okCount++; continue; }
 
         let participant = await this.prisma.participant.findUnique({ where: { campaign_id_cedula: { campaign_id: totem.campaign_id, cedula: item.cedula } } });
         if (!participant) {
           participant = await this.prisma.participant.create({ data: { campaign_id: totem.campaign_id, cedula: item.cedula, nombres: item.nombres, apellidos: item.apellidos, telefono: item.telefono, email: item.email } });
         }
 
-        const registration = await this.prisma.registration.create({
+        await this.prisma.registration.create({
           data: {
             factura: item.factura,
             participant_id: participant.id,
@@ -112,10 +126,14 @@ export class SyncService {
           },
         });
         results.push({ local_id: item.local_id, factura: item.factura, status: 'ok' });
+        okCount++;
       } catch (err: any) {
         results.push({ local_id: item.local_id, factura: item.factura, status: 'error', message: err.message });
+        errorCount++;
       }
     }
+    const total = okCount + errorCount;
+    await this.logSyncEvent(totem.id, 'push', `${okCount} registros enviados${errorCount > 0 ? `, ${errorCount} errores` : ''}`, total);
     return { results };
   }
 
