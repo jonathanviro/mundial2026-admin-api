@@ -73,16 +73,24 @@ export class SyncService {
 
   async pushRegistrations(totem_code: string, items: any[]) {
     const totem = await this.verifyTotem(totem_code);
-    const phase = await this.prisma.phase.findFirst({
-      where: { campaign_id: totem.campaign_id, active: true, published: true },
-    });
-    if (!phase) return { results: items.map(i => ({ local_id: i.local_id, status: 'no_phase' })) };
 
     const results: { local_id: any; factura: any; status: string; message?: string }[] = [];
     let okCount = 0;
     let errorCount = 0;
     for (const item of items) {
       try {
+        // Usar phase_id del payload si viene, sino fase activa (fallback totems viejos)
+        const phase = item.phase_id
+          ? await this.prisma.phase.findUnique({ where: { id: item.phase_id } })
+          : await this.prisma.phase.findFirst({
+              where: { campaign_id: totem.campaign_id, active: true, published: true },
+            });
+        if (!phase) {
+          results.push({ local_id: item.local_id, factura: item.factura, status: 'error', message: 'Fase no encontrada' });
+          errorCount++;
+          continue;
+        }
+
         const existingFact = await this.prisma.registration.findUnique({ where: { factura: item.factura } });
         if (existingFact) {
           if (item.champion_team && item.champion_team !== existingFact.champion_team) {
