@@ -66,6 +66,12 @@ export class MatchesService {
       data: { goals_local: gl, goals_visitor: gv, finished: true },
     });
 
+    // Increment phase version so totems detect changes
+    await this.prisma.phase.update({
+      where: { id: match.phase_id },
+      data: { version: { increment: 1 } },
+    });
+
     // Evaluate predictions for this match
     const predictions = await this.prisma.prediction.findMany({ where: { match_id: id } });
     let exactMatches = 0;
