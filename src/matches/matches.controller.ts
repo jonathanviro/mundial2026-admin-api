@@ -35,4 +35,10 @@ export class MatchesController {
   setResult(@Param('id') id: string, @Body() dto: SetResultDto) {
     return this.service.setResult(+id, dto);
   }
+
+  @Put(':id/finish')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  finish(@Param('id') id: string) {
+    return this.service.finish(+id);
+  }
 }

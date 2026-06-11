@@ -116,6 +116,20 @@ export class MatchesService {
     }
   }
 
+  async finish(id: number) {
+    const match = await this.prisma.match.findUnique({ where: { id } });
+    if (!match) throw new NotFoundException('Partido no encontrado');
+    await this.prisma.match.update({
+      where: { id },
+      data: { finished: true },
+    });
+    await this.prisma.phase.update({
+      where: { id: match.phase_id },
+      data: { version: { increment: 1 } },
+    });
+    return { match_id: id, finished: true };
+  }
+
   async bulkCreate(matches: CreateMatchDto[]) {
     const created = await this.prisma.match.createMany({ data: matches, skipDuplicates: true });
     if (matches.length > 0) {
