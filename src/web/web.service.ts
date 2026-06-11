@@ -32,7 +32,7 @@ function getTodayDateString(): string {
 
 function getNextAvailableDate(matches: { date: string | null; finished: boolean }[], today: string): string | null {
   const nextMatch = matches
-    .filter((m) => !m.finished && m.date && m.date > today)
+    .filter((m) => !m.finished && m.date && m.date >= today)
     .sort((a, b) => a.date!.localeCompare(b.date!))[0];
   return nextMatch?.date || null;
 }
@@ -281,17 +281,27 @@ export class WebService {
 
     if (phase.daily_predictions) {
       const today = getTodayDateString();
-      const nextDate = getNextAvailableDate(allMatches, today);
+      const uniqueDates = [...new Set(
+        allMatches
+          .filter((m) => !m.finished && m.date && m.date >= today)
+          .map((m) => m.date),
+      )].sort() as string[];
 
-      const matches = nextDate
-        ? allMatches.filter((m) => m.date === nextDate && !m.finished)
-        : [];
+      let nextDate: string | null = null;
+      let matches: typeof allMatches = [];
+      let alreadySubmitted = true;
 
-      const existing = nextDate
-        ? await this.prisma.registration.findFirst({
-            where: { employee_id: employeeId, prediction_date: nextDate },
-          })
-        : null;
+      for (const date of uniqueDates) {
+        const existing = await this.prisma.registration.findFirst({
+          where: { employee_id: employeeId, prediction_date: date },
+        });
+        if (!existing) {
+          nextDate = date;
+          matches = allMatches.filter((m) => m.date === date && !m.finished);
+          alreadySubmitted = false;
+          break;
+        }
+      }
 
       return {
         phase: {
@@ -308,7 +318,7 @@ export class WebService {
         matches,
         all_matches: allMatches,
         prediction_date: nextDate,
-        already_submitted: !!existing,
+        already_submitted: alreadySubmitted,
       };
     }
 
@@ -357,7 +367,19 @@ export class WebService {
       const allMatches = await this.prisma.match.findMany({
         where: { phase_id: phase.id },
       });
-      const nextDate = getNextAvailableDate(allMatches, today);
+      const uniqueDates = [...new Set(
+        allMatches
+          .filter((m) => !m.finished && m.date && m.date >= today)
+          .map((m) => m.date),
+      )].sort() as string[];
+
+      let nextDate: string | null = null;
+      for (const date of uniqueDates) {
+        const existing = await this.prisma.registration.findFirst({
+          where: { employee_id: employeeId, prediction_date: date },
+        });
+        if (!existing) { nextDate = date; break; }
+      }
 
       if (!nextDate) {
         throw new BadRequestException("No hay partidos disponibles para predecir");
