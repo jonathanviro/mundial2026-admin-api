@@ -7,7 +7,7 @@ import type { RegistrationSource } from '@prisma/client';
 export class RegistrationsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(campaign_id?: number, phase_id?: number, totem_id?: number, source?: RegistrationSource, page = 1, limit = 50, search?: string) {
+  async findAll(campaign_id?: number, phase_id?: number, totem_id?: number, source?: RegistrationSource, page = 1, limit = 50, search?: string, sortBy = 'registered_at', sortOrder: 'asc' | 'desc' = 'desc') {
     const campaignFilter = campaign_id
       ? { OR: [
           { totem: { campaign_id } },
@@ -31,6 +31,21 @@ export class RegistrationsService {
         { factura: { contains: search } },
       ];
     }
+
+    const sortMap: Record<string, any> = {
+      code:        { employee: { code: sortOrder } },
+      nombres:     { employee: { nombres: sortOrder } },
+      factura:     { factura: sortOrder },
+      prediction_date: { prediction_date: sortOrder },
+      correct_predictions: { correct_predictions: sortOrder },
+      total_points: { total_points: sortOrder },
+      registered_at: { registered_at: sortOrder },
+      phase:       { phase: { name: sortOrder } },
+      cedula:      { participant: { cedula: sortOrder } },
+    };
+
+    const orderBy = sortMap[sortBy] || { registered_at: 'desc' };
+
     const [data, total] = await Promise.all([
       this.prisma.registration.findMany({
         where,
@@ -41,7 +56,7 @@ export class RegistrationsService {
           phase: { select: { id: true, name: true, number: true } },
           _count: { select: { predictions: true } },
         },
-        orderBy: { registered_at: 'desc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
