@@ -146,36 +146,97 @@ export class RegistrationsService {
     const allPredKeys = [...new Set(registrations.flatMap(r => (r.predictions || []).map((_, i) => i + 1)))];
 
     if (source === 'WEB') {
-      // Hoja: Empleados
+      // Hoja: Empleados — agrupado por empleado, columnas por fecha
       const ws = workbook.addWorksheet('Empleados');
+      const allDates = [...new Set(registrations.map(r => r.prediction_date).filter(Boolean))].sort() as string[];
+
       const columns: any[] = [
         { header: 'Código', key: 'code', width: 15 },
         { header: 'Nombre', key: 'nombre', width: 25 },
-        { header: 'Fecha Pred.', key: 'fecha', width: 16 },
         { header: 'Puntos', key: 'puntos', width: 10 },
-        { header: 'Aciertos', key: 'aciertos', width: 10 },
       ];
-      allPredKeys.forEach(k => columns.push({ header: `Predicción ${k}`, key: `pred${k}`, width: 30 }));
-      ws.columns = columns;
+      allDates.forEach(d => columns.push({ header: d, key: `d_${d}`, width: 32 }));
+      columns.push({ header: 'Aciertos', key: 'aciertos', width: 10 });
 
+      ws.columns = columns;
       ws.getRow(1).eachCell(c => { c.fill = headerFill; c.font = headerFont; c.alignment = { vertical: 'middle', horizontal: 'center' }; });
       ws.getRow(1).height = 24;
 
-      registrations.forEach((reg, idx) => {
-        const preds = reg.predictions || [];
-        const emp = reg.employee;
+      // Agrupar registros por employee_id
+      const empMap = new Map<string, typeof registrations>();
+      registrations.forEach(r => {
+        if (!r.employee_id) return;
+        const list = empMap.get(r.employee_id) || [];
+        list.push(r);
+        empMap.set(r.employee_id, list);
+      });
+
+      const greenFont: Partial<ExcelJS.Font> = { color: { argb: 'FF00E676' }, bold: true };
+      const yellowFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFFD600' }, bold: true };
+      const redFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFF5252' }, bold: false };
+
+      let rowIdx = 0;
+      for (const [_, regs] of empMap) {
+        const emp = regs[0].employee;
+        const totalPoints = regs.reduce((s, r) => s + (r.total_points || 0), 0);
+        const totalCorrect = regs.reduce((s, r) => s + (r.correct_predictions || 0), 0);
+
         const rowData: any = {
           code: emp?.code || '',
           nombre: `${emp?.nombres || ''} ${emp?.apellidos || ''}`.trim(),
-          fecha: reg.prediction_date || '',
-          puntos: reg.total_points || 0,
-          aciertos: reg.correct_predictions,
+          puntos: totalPoints,
+          aciertos: totalCorrect,
         };
-        preds.forEach((p, i) => { rowData[`pred${i + 1}`] = fmt(p); });
+
+        // Por cada fecha, buscar el registro y formatear predicciones
+        allDates.forEach(date => {
+          const reg = regs.find(r => r.prediction_date === date);
+          if (!reg) { rowData[`d_${date}`] = ''; return; }
+          const preds = reg.predictions || [];
+          const parts: string[] = [];
+          const colorMap: { col: number; font: Partial<ExcelJS.Font> }[] = [];
+          preds.forEach((p: any) => {
+            const matchStr = `${p.match?.team_local || '?'} ${p.goals_local}-${p.goals_visitor} ${p.match?.team_visitor || '?'}`;
+            parts.push(matchStr);
+            if (p.is_correct) {
+              colorMap.push({ col: parts.length - 1, font: greenFont });
+            } else if (p.points && p.points > 0) {
+              colorMap.push({ col: parts.length - 1, font: yellowFont });
+            } else {
+              colorMap.push({ col: parts.length - 1, font: redFont });
+            }
+          });
+          rowData[`d_${date}`] = parts.join('\n');
+        });
+
         const row = ws.addRow(rowData);
-        if (idx % 2 === 0) row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FA' } }; });
-      });
-      ws.autoFilter = { from: 'A1', to: columns[columns.length - 1].key + (registrations.length + 1) };
+        if (rowIdx++ % 2 === 0) row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FA' } }; });
+
+        // Aplicar colores a predicciones
+        allDates.forEach((date, di) => {
+          const reg = regs.find(r => r.prediction_date === date);
+          if (!reg) return;
+          const colIdx = 3 + di; // columna 0=code, 1=nombre, 2=puntos, 3+=fechas
+          const cell = row.getCell(colIdx + 1);
+          const preds = reg.predictions || [];
+          const richText: any[] = [];
+          preds.forEach((p: any) => {
+            const matchStr = `${p.match?.team_local || '?'} ${p.goals_local}-${p.goals_visitor} ${p.match?.team_visitor || '?'}`;
+            let fontColor: string;
+            if (p.is_correct) fontColor = 'FF00E676';
+            else if (p.points && p.points > 0) fontColor = 'FFFFD600';
+            else fontColor = 'FFFF5252';
+            if (richText.length > 0) richText.push({ text: '\n', font: { size: 10 } });
+            richText.push({ text: matchStr, font: { color: { argb: fontColor }, bold: p.is_correct || (p.points && p.points > 0), size: 10 } });
+          });
+          if (richText.length > 0) {
+            cell.value = { richText };
+            cell.alignment = { wrapText: true, vertical: 'top' };
+          }
+        });
+      }
+
+      ws.autoFilter = { from: 'A1', to: columns[columns.length - 1].key + (empMap.size + 1) };
     } else if (source === 'TOTEM') {
       // Hoja: Tótem
       const ws = workbook.addWorksheet('Totem');
