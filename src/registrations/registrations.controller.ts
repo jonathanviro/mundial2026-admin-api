@@ -51,9 +51,10 @@ export class RegistrationsController {
     @Query('campaign_id') cid?: string,
     @Query('phase_id') pid?: string,
     @Query('totem_id') tid?: string,
+    @Query('source') source?: string,
   ) {
     const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
-    const buffer = await this.service.exportExcel(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined);
+    const buffer = await this.service.exportExcel(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="polla_mundial_2026_${Date.now()}.xlsx"`,
