@@ -154,6 +154,8 @@ export class RegistrationsService {
         { header: 'Código', key: 'code', width: 15 },
         { header: 'Nombre', key: 'nombre', width: 25 },
         { header: 'Puntos', key: 'puntos', width: 10 },
+        { header: 'Exactos', key: 'exactos', width: 10 },
+        { header: 'Precisión', key: 'precision', width: 10 },
       ];
       allDates.forEach(d => columns.push({ header: d, key: `d_${d}`, width: 32 }));
       columns.push({ header: 'Aciertos', key: 'aciertos', width: 10 });
@@ -171,20 +173,37 @@ export class RegistrationsService {
         empMap.set(r.employee_id, list);
       });
 
+      // Ordenar empleados por puntos descendente, luego por código
+      const sortedEmps = [...empMap.entries()].sort((a, b) => {
+        const ptsA = a[1].reduce((s, r) => s + (r.total_points || 0), 0);
+        const ptsB = b[1].reduce((s, r) => s + (r.total_points || 0), 0);
+        if (ptsB !== ptsA) return ptsB - ptsA;
+        return (a[1][0].employee?.code || '').localeCompare(b[1][0].employee?.code || '');
+      });
+
       const greenFont: Partial<ExcelJS.Font> = { color: { argb: 'FF00E676' }, bold: true };
       const yellowFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFFD600' }, bold: true };
       const redFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFF5252' }, bold: false };
 
-      let rowIdx = 0;
-      for (const [_, regs] of empMap) {
+      for (const [_, regs] of sortedEmps) {
         const emp = regs[0].employee;
         const totalPoints = regs.reduce((s, r) => s + (r.total_points || 0), 0);
         const totalCorrect = regs.reduce((s, r) => s + (r.correct_predictions || 0), 0);
+        let totalPreds = 0;
+        let exactScores = 0;
+        regs.forEach(r => {
+          const preds = r.predictions || [];
+          totalPreds += preds.length;
+          exactScores += preds.filter((p: any) => p.points === 2).length;
+        });
+        const precision = totalPreds > 0 ? Math.round((totalCorrect / totalPreds) * 100) + '%' : '—';
 
         const rowData: any = {
           code: emp?.code || '',
           nombre: `${emp?.nombres || ''} ${emp?.apellidos || ''}`.trim(),
           puntos: totalPoints,
+          exactos: exactScores,
+          precision,
           aciertos: totalCorrect,
         };
 
@@ -210,13 +229,12 @@ export class RegistrationsService {
         });
 
         const row = ws.addRow(rowData);
-        if (rowIdx++ % 2 === 0) row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FA' } }; });
 
         // Aplicar colores a predicciones
         allDates.forEach((date, di) => {
           const reg = regs.find(r => r.prediction_date === date);
           if (!reg) return;
-          const colIdx = 3 + di; // columna 0=code, 1=nombre, 2=puntos, 3+=fechas
+          const colIdx = 5 + di; // columna 0=code, 1=nombre, 2=puntos, 3=exactos, 4=precision, 5+=fechas
           const cell = row.getCell(colIdx + 1);
           const preds = reg.predictions || [];
           const richText: any[] = [];
