@@ -7,28 +7,53 @@ import type { RegistrationSource } from '@prisma/client';
 export class RegistrationsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(campaign_id?: number, phase_id?: number, totem_id?: number, source?: RegistrationSource) {
+  async findAll(campaign_id?: number, phase_id?: number, totem_id?: number, source?: RegistrationSource, page = 1, limit = 50, search?: string) {
     const campaignFilter = campaign_id
       ? { OR: [
           { totem: { campaign_id } },
           { employee: { campaign_id } },
         ] }
       : {};
-    return this.prisma.registration.findMany({
-      where: {
-        ...(campaign_id ? campaignFilter : {}),
-        ...(phase_id ? { phase_id } : {}),
-        ...(totem_id ? { totem_id } : {}),
-        ...(source ? { source } : {}),
-      },
-      include: {
-        participant: true,
-        totem: { select: { id: true, name: true, code: true } },
-        employee: { select: { id: true, code: true, nombres: true, apellidos: true, email: true, telefono: true } },
-        phase: { select: { id: true, name: true, number: true } },
-        predictions: { include: { match: true } },
-      },
-      orderBy: { registered_at: 'desc' },
+    const where: any = {
+      ...(campaign_id ? campaignFilter : {}),
+      ...(phase_id ? { phase_id } : {}),
+      ...(totem_id ? { totem_id } : {}),
+      ...(source ? { source } : {}),
+    };
+    if (search) {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        { employee: { code: { contains: search, mode: 'insensitive' } } },
+        { employee: { nombres: { contains: search, mode: 'insensitive' } } },
+        { employee: { apellidos: { contains: search, mode: 'insensitive' } } },
+        { participant: { nombres: { contains: search, mode: 'insensitive' } } },
+        { participant: { apellidos: { contains: search, mode: 'insensitive' } } },
+        { factura: { contains: search } },
+      ];
+    }
+    const [data, total] = await Promise.all([
+      this.prisma.registration.findMany({
+        where,
+        include: {
+          participant: true,
+          totem: { select: { id: true, name: true, code: true } },
+          employee: { select: { id: true, code: true, nombres: true, apellidos: true, email: true, telefono: true } },
+          phase: { select: { id: true, name: true, number: true } },
+          _count: { select: { predictions: true } },
+        },
+        orderBy: { registered_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.registration.count({ where }),
+    ]);
+    return { data, total, page, pages: Math.ceil(total / limit), limit };
+  }
+
+  async getPredictions(id: number) {
+    return this.prisma.prediction.findMany({
+      where: { registration_id: id },
+      include: { match: true },
     });
   }
 
@@ -75,7 +100,24 @@ export class RegistrationsService {
   }
 
   async exportExcel(campaign_id: number, phase_id?: number, totem_id?: number): Promise<Buffer> {
-    const registrations = await this.findAll(campaign_id, phase_id, totem_id);
+    const campaignFilter = campaign_id
+      ? { OR: [{ totem: { campaign_id } }, { employee: { campaign_id } }] }
+      : {};
+    const registrations = await this.prisma.registration.findMany({
+      where: {
+        ...(campaign_id ? campaignFilter : {}),
+        ...(phase_id ? { phase_id } : {}),
+        ...(totem_id ? { totem_id } : {}),
+      },
+      include: {
+        participant: true,
+        totem: { select: { id: true, name: true, code: true } },
+        employee: { select: { id: true, code: true, nombres: true, apellidos: true, email: true, telefono: true } },
+        phase: { select: { id: true, name: true, number: true } },
+        predictions: { include: { match: true } },
+      },
+      orderBy: { registered_at: 'desc' },
+    });
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Polla Mundial 2026';
     const ws = workbook.addWorksheet('Participantes');
