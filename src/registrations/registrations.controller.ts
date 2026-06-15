@@ -20,9 +20,11 @@ export class RegistrationsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
   ) {
     const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
-    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source, page ? +page : 1, limit ? +limit : 50, search);
+    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source, page ? +page : 1, limit ? +limit : 50, search, sortBy, sortOrder as 'asc' | 'desc');
   }
 
   @Get(':id/predictions')
