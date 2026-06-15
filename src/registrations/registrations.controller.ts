@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Request, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RegistrationsService } from './registrations.service';
 import { JwtAuthGuard, RolesGuard, Roles, UserRole } from '../shared/guards/roles.guard';
@@ -17,9 +17,17 @@ export class RegistrationsController {
     @Query('phase_id') pid?: string,
     @Query('totem_id') tid?: string,
     @Query('source') source?: RegistrationSource,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
   ) {
     const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : (cid ? +cid : undefined);
-    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source);
+    return this.service.findAll(campaign_id, pid ? +pid : undefined, tid ? +tid : undefined, source, page ? +page : 1, limit ? +limit : 50, search);
+  }
+
+  @Get(':id/predictions')
+  getPredictions(@Param('id') id: string) {
+    return this.service.getPredictions(+id);
   }
 
   @Get('winners')
