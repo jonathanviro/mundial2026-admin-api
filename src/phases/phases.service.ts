@@ -432,11 +432,14 @@ export class PhasesService {
     };
     const totalExpected = this.getExpectedMatchesForPhase(phase.number);
     const currentMatchCount = await this.prisma.match.count({ where: { phase_id: phaseId } });
+    const completeMatchCount = await this.prisma.match.count({
+      where: { phase_id: phaseId, team_local: { not: null }, team_visitor: { not: null } },
+    });
 
     await this.prisma.phase.update({
       where: { id: phaseId },
       data: {
-        predictions_required: currentMatchCount,
+        predictions_required: completeMatchCount,
         min_correct_to_win: Math.max(1, Math.round(currentMatchCount * rules.min_correct_to_win / totalExpected)),
         version: { increment: 1 },
       },
