@@ -3,6 +3,7 @@ import { PrismaService } from "../shared/prisma.service";
 import {
   IsNumber,
   IsString,
+  IsBoolean,
   IsOptional,
   IsArray,
   ValidateNested,
@@ -36,6 +37,14 @@ export class MatchupDto {
   @IsOptional() match_number?: number;
   @IsString() team_local!: string;
   @IsString() team_visitor!: string;
+  @IsOptional() @IsString() date?: string;
+}
+
+export class AddMatchesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MatchupDto)
+  matches!: MatchupDto[];
 }
 
 export class GenerateNextPhaseDto {
@@ -49,8 +58,18 @@ export class GenerateNextPhaseDto {
   @ValidateNested({ each: true })
   @Type(() => MatchupDto)
   matchups?: MatchupDto[];
+  @IsOptional() @IsBoolean() daily_predictions?: boolean;
   @IsOptional() @IsNumber() predictions_required?: number;
   @IsOptional() @IsNumber() min_correct_to_win?: number;
+}
+
+export class UpdatePhaseDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsBoolean() daily_predictions?: boolean;
+  @IsOptional() @IsNumber() predictions_required?: number;
+  @IsOptional() @IsNumber() min_correct_to_win?: number;
+  @IsOptional() @IsString() date_from?: string;
+  @IsOptional() @IsString() date_to?: string;
 }
 
 const PHASE_RULES: Record<
@@ -165,6 +184,12 @@ export class PhasesService {
     const phase = await this.prisma.phase.findUnique({ where: { id } });
     if (!phase) throw new NotFoundException("Fase no encontrada");
     return this.prisma.phase.update({ where: { id }, data: { active: false } });
+  }
+
+  async update(id: number, dto: UpdatePhaseDto) {
+    const phase = await this.prisma.phase.findUnique({ where: { id } });
+    if (!phase) throw new NotFoundException("Fase no encontrada");
+    return this.prisma.phase.update({ where: { id }, data: dto });
   }
 
   getPhaseRules() {
@@ -293,18 +318,24 @@ export class PhasesService {
       throw new Error("Debe proporcionar al menos 2 equipos clasificados");
     }
 
-    // Calculate expected matches for this phase
-    const expectedMatches = this.getExpectedMatchesForPhase(nextNumber);
+    // Create next phase with dynamic predictions_required
+    const matchupCount = dto.matchups?.filter(m => m.team_local && m.team_visitor).length || 0;
+    const totalMatchups = dto.matchups?.length || 0;
+    const totalExpected = this.getExpectedMatchesForPhase(nextNumber);
 
-    // Create next phase
+    const predRequired = dto.predictions_required ?? (matchupCount > 0 ? matchupCount : rules.predictions_required);
+    const minCorrect = dto.min_correct_to_win ?? (matchupCount > 0
+      ? Math.max(1, Math.round(matchupCount * rules.min_correct_to_win / totalExpected))
+      : rules.min_correct_to_win);
+
     const nextPhase = await this.prisma.phase.create({
       data: {
         campaign_id: currentPhase.campaign_id,
         number: nextNumber,
         name: rules.name,
-        predictions_required:
-          dto.predictions_required ?? rules.predictions_required,
-        min_correct_to_win: dto.min_correct_to_win ?? rules.min_correct_to_win,
+        daily_predictions: dto.daily_predictions ?? false,
+        predictions_required: predRequired,
+        min_correct_to_win: minCorrect,
         published: false,
         active: false,
       },
@@ -314,13 +345,6 @@ export class PhasesService {
     let matches: any[] = [];
 
     if (dto.matchups && dto.matchups.length > 0) {
-      // Validate matchups count matches expected
-      if (dto.matchups.length !== expectedMatches) {
-        throw new Error(
-          `Fase ${nextNumber} requiere ${expectedMatches} partidos, pero se enviaron ${dto.matchups.length}`,
-        );
-      }
-
       // Determine start number for auto-assignment
       const lastMatch = await this.prisma.match.findFirst({
         where: { phase_id: currentPhase.id },
@@ -328,13 +352,16 @@ export class PhasesService {
       });
       let startNumber = lastMatch ? lastMatch.match_number + 1 : 1;
 
-      matches = dto.matchups.map((m, index) => ({
-        phase_id: nextPhase.id,
-        match_number: m.match_number ?? startNumber + index,
-        team_local: m.team_local,
-        team_visitor: m.team_visitor,
-        finished: false,
-      }));
+      matches = dto.matchups
+        .filter(m => m.team_local && m.team_visitor)
+        .map((m, index) => ({
+          phase_id: nextPhase.id,
+          match_number: m.match_number ?? startNumber + index,
+          team_local: m.team_local,
+          team_visitor: m.team_visitor,
+          date: m.date ?? null,
+          finished: false,
+        }));
     } else if (dto.qualified_teams && dto.qualified_teams.length >= 2) {
       // Auto-generate sequential matchups from qualified teams (fallback)
       const lastMatch = await this.prisma.match.findFirst({
@@ -364,6 +391,61 @@ export class PhasesService {
       phase: nextPhase,
       matches_created: matches.length,
       total_qualified: dto.qualified_teams.length,
+      total_expected: totalExpected,
+    };
+  }
+
+  async addMatches(phaseId: number, dto: AddMatchesDto) {
+    const phase = await this.prisma.phase.findUnique({ where: { id: phaseId } });
+    if (!phase) throw new NotFoundException("Fase no encontrada");
+
+    const completeMatches = dto.matches.filter(m => m.team_local && m.team_visitor);
+    if (completeMatches.length === 0) {
+      throw new Error("Debe proporcionar al menos un partido completo");
+    }
+
+    // Get the last match_number in this phase for auto-assignment
+    const lastMatch = await this.prisma.match.findFirst({
+      where: { phase_id: phaseId },
+      orderBy: { match_number: "desc" },
+    });
+    let startNumber = lastMatch ? lastMatch.match_number + 1 : 1;
+
+    const matches = completeMatches.map((m, index) => ({
+      phase_id: phaseId,
+      match_number: m.match_number ?? startNumber + index,
+      team_local: m.team_local,
+      team_visitor: m.team_visitor,
+      date: m.date ?? null,
+      finished: false,
+    }));
+
+    await this.prisma.match.createMany({ data: matches });
+
+    // Recalculate predictions_required and min_correct_to_win
+    const rules: PhaseRule = PHASE_RULES[phase.number] || {
+      name: `Fase ${phase.number}`,
+      predictions_required: 3,
+      min_correct_to_win: 1,
+      matches: 0,
+      qualified_from_previous: 0,
+    };
+    const totalExpected = this.getExpectedMatchesForPhase(phase.number);
+    const currentMatchCount = await this.prisma.match.count({ where: { phase_id: phaseId } });
+
+    await this.prisma.phase.update({
+      where: { id: phaseId },
+      data: {
+        predictions_required: currentMatchCount,
+        min_correct_to_win: Math.max(1, Math.round(currentMatchCount * rules.min_correct_to_win / totalExpected)),
+        version: { increment: 1 },
+      },
+    });
+
+    return {
+      matches_created: matches.length,
+      total_matches: currentMatchCount,
+      total_expected: totalExpected,
     };
   }
 

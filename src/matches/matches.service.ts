@@ -130,6 +130,33 @@ export class MatchesService {
     return { match_id: id, finished: true };
   }
 
+  async resetMatch(id: number) {
+    const match = await this.prisma.match.findUnique({
+      where: { id },
+      include: { phase: true },
+    });
+    if (!match) throw new NotFoundException('Partido no encontrado');
+
+    await this.prisma.match.update({
+      where: { id },
+      data: { goals_local: null, goals_visitor: null, finished: false },
+    });
+
+    await this.prisma.prediction.updateMany({
+      where: { match_id: id },
+      data: { is_correct: false, points: 0 },
+    });
+
+    await this.recalculateWinners(match.phase_id, match.phase.min_correct_to_win);
+
+    await this.prisma.phase.update({
+      where: { id: match.phase_id },
+      data: { version: { increment: 1 } },
+    });
+
+    return { match_id: id, finished: false, predictions_reset: true };
+  }
+
   async bulkCreate(matches: CreateMatchDto[]) {
     const created = await this.prisma.match.createMany({ data: matches, skipDuplicates: true });
     if (matches.length > 0) {

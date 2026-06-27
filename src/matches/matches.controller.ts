@@ -41,4 +41,10 @@ export class MatchesController {
   finish(@Param('id') id: string) {
     return this.service.finish(+id);
   }
+
+  @Put(':id/reset')
+  @Roles(UserRole.SUPERADMIN, UserRole.CAMPAIGN_ADMIN)
+  reset(@Param('id') id: string) {
+    return this.service.resetMatch(+id);
+  }
 }
