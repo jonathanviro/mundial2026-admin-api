@@ -478,20 +478,13 @@ export class WebService {
     });
     if (!employee) throw new UnauthorizedException("Trabajador no encontrado");
 
-    const phase = await this.prisma.phase.findFirst({
-      where: {
-        campaign_id: employee.campaign_id,
-        active: true,
-        published: true,
-        daily_predictions: true,
-      },
-    });
-    if (!phase) return { ranking: [], phase: null };
-
-    // Aggregate points per employee for this phase
+    // Aggregate points across ALL phases of the campaign
     const result = await this.prisma.registration.groupBy({
       by: ["employee_id"],
-      where: { phase_id: phase.id, source: RegistrationSource.WEB },
+      where: {
+        source: RegistrationSource.WEB,
+        phase: { campaign_id: employee.campaign_id },
+      },
       _sum: { total_points: true },
       orderBy: { _sum: { total_points: "desc" } },
     });
@@ -518,7 +511,7 @@ export class WebService {
       .sort((a, b) => b.total_points - a.total_points || a.code.localeCompare(b.code))
       .map((r, i) => ({ ...r, position: i + 1 }));
 
-    return { ranking, phase: { id: phase.id, name: phase.name } };
+    return { ranking, phase: null };
   }
 
   async getInstructions() {
