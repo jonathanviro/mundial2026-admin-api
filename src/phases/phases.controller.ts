@@ -1,6 +1,6 @@
 // phases.controller.ts
-import { Controller, Get, Post, Param, Body, UseGuards, Query, Request } from '@nestjs/common';
-import { PhasesService, CreatePhaseDto, GenerateNextPhaseDto } from './phases.service';
+import { Controller, Get, Post, Patch, Param, Body, UseGuards, Query, Request } from '@nestjs/common';
+import { PhasesService, CreatePhaseDto, GenerateNextPhaseDto, AddMatchesDto, UpdatePhaseDto } from './phases.service';
 import { JwtAuthGuard, RolesGuard, Roles, UserRole } from '../shared/guards/roles.guard';
 
 @Controller('phases')
@@ -49,5 +49,17 @@ export class PhasesController {
   @Roles(UserRole.SUPERADMIN)
   generateNext(@Body() dto: GenerateNextPhaseDto) {
     return this.service.generateNextPhase(dto);
+  }
+
+  @Post(':id/add-matches')
+  @Roles(UserRole.SUPERADMIN)
+  addMatches(@Param('id') id: string, @Body() dto: AddMatchesDto) {
+    return this.service.addMatches(+id, dto);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.SUPERADMIN)
+  update(@Param('id') id: string, @Body() dto: UpdatePhaseDto) {
+    return this.service.update(+id, dto);
   }
 }
