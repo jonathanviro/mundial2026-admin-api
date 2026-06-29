@@ -102,18 +102,19 @@ export class MatchesService {
   }
 
   private async recalculateWinners(phase_id: number, min_correct: number) {
-    const registrations = await this.prisma.registration.findMany({
-      where: { phase_id },
-      include: { predictions: true },
-    });
-    for (const reg of registrations) {
-      const correct = reg.predictions.filter(p => p.is_correct).length;
-      const total_points = reg.predictions.reduce((sum, p) => sum + p.points, 0);
-      await this.prisma.registration.update({
-        where: { id: reg.id },
-        data: { correct_predictions: correct, total_points, is_winner: correct >= min_correct },
-      });
-    }
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE registrations r
+      SET 
+        total_points = (SELECT COALESCE(SUM(p.points), 0) 
+                        FROM predictions p WHERE p.registration_id = r.id),
+        correct_predictions = (SELECT COUNT(*) 
+                               FROM predictions p 
+                               WHERE p.registration_id = r.id AND p.is_correct = true),
+        is_winner = (SELECT COUNT(*) 
+                     FROM predictions p 
+                     WHERE p.registration_id = r.id AND p.is_correct = true) >= $1
+      WHERE r.phase_id = $2
+    `, min_correct, phase_id);
   }
 
   async finish(id: number) {
