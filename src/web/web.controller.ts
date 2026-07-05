@@ -46,6 +46,12 @@ export class WebController {
   }
 
   @UseGuards(EmployeeAuthGuard)
+  @Get('rankings')
+  getRankings(@Request() req) {
+    return this.service.getRankings(req.employee.id);
+  }
+
+  @UseGuards(EmployeeAuthGuard)
   @Post('log')
   writeLog(@Request() req, @Body() body: { action: string; metadata?: any }) {
     return this.service.writeLog(req.employee.id, body);
