@@ -514,6 +514,63 @@ export class WebService {
     return { ranking, phase: null };
   }
 
+  async getRankings(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, campaign_id: true },
+    });
+    if (!employee) throw new UnauthorizedException("Trabajador no encontrado");
+
+    const groups = [
+      { id: "grupos_16avos", name: "Fase de Grupos + 16avos", phase_numbers: [1, 2] },
+      { id: "octavos", name: "Fase de Octavos de Final", phase_numbers: [3] },
+      { id: "cuartos", name: "Fase de Cuartos de Final", phase_numbers: [4] },
+      { id: "semis", name: "Fase de Semifinales", phase_numbers: [5] },
+      { id: "final", name: "Fase Final", phase_numbers: [6] },
+    ];
+
+    const allEmployees = await this.prisma.employee.findMany({
+      where: { campaign_id: employee.campaign_id },
+      select: { id: true, code: true, nombres: true },
+    });
+    const empMap = new Map(allEmployees.map((e) => [e.id, e]));
+
+    const result = await Promise.all(
+      groups.map(async (group) => {
+        const rows = await this.prisma.registration.groupBy({
+          by: ["employee_id"],
+          where: {
+            source: RegistrationSource.WEB,
+            phase: {
+              campaign_id: employee.campaign_id,
+              number: { in: group.phase_numbers },
+            },
+          },
+          _sum: { total_points: true },
+          orderBy: { _sum: { total_points: "desc" } },
+        });
+
+        const ranking = rows
+          .filter((r) => r.employee_id)
+          .map((r) => {
+            const emp = empMap.get(r.employee_id!);
+            return {
+              position: 0,
+              code: emp?.code || "—",
+              nombres: emp?.nombres || "—",
+              total_points: r._sum.total_points || 0,
+            };
+          })
+          .sort((a, b) => b.total_points - a.total_points || a.code.localeCompare(b.code))
+          .map((r, i) => ({ ...r, position: i + 1 }));
+
+        return { id: group.id, name: group.name, phase_numbers: group.phase_numbers, ranking };
+      }),
+    );
+
+    return { groups: result };
+  }
+
   async getInstructions() {
     return {
       instructions: [
