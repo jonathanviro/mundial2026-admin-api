@@ -62,4 +62,20 @@ export class RegistrationsController {
     });
     res.end(buffer);
   }
+
+  @Get('export-employees-by-phase')
+  async exportEmployeesByPhase(
+    @Request() req,
+    @Res() res: Response,
+    @Query('phase_id') pid?: string,
+  ) {
+    const campaign_id = req.user.role === UserRole.CAMPAIGN_ADMIN ? req.user.campaign_id : undefined;
+    const result = await this.service.exportEmployeesByPhase(campaign_id, pid ? +pid : undefined);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+    });
+    res.end(result.buffer);
+  }
 }
