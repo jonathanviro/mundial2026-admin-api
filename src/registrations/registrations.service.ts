@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../shared/prisma.service';
 import * as ExcelJS from 'exceljs';
 import type { RegistrationSource } from '@prisma/client';
@@ -366,5 +366,161 @@ export class RegistrationsService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  async exportEmployeesByPhase(campaign_id?: number, phase_id?: number): Promise<{ buffer: Buffer; filename: string }> {
+    const wherePhase: any = { published: true };
+    if (campaign_id) wherePhase.campaign_id = campaign_id;
+    if (phase_id) wherePhase.id = phase_id;
+
+    const phases = await this.prisma.phase.findMany({
+      where: wherePhase,
+      orderBy: { number: "asc" },
+    });
+    if (phases.length === 0) throw new NotFoundException("No hay fases publicadas");
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Polla Mundial 2026";
+    const headerFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1B3A5C" } };
+    const headerFont: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    const greenFont: Partial<ExcelJS.Font> = { color: { argb: "FF00E676" }, bold: true };
+    const yellowFont: Partial<ExcelJS.Font> = { color: { argb: "FFFFD600" }, bold: true };
+    const redFont: Partial<ExcelJS.Font> = { color: { argb: "FFFF5252" }, bold: false };
+
+    const fmt = (p: any) =>
+      p
+        ? `${p.match?.team_local || "?"} ${p.goals_local}-${p.goals_visitor} ${p.match?.team_visitor || "?"}`
+        : "";
+
+    // Summary sheet
+    const wsSummary = workbook.addWorksheet("Resumen");
+    wsSummary.columns = [
+      { header: "Fase", key: "fase", width: 30 },
+      { header: "Participantes", key: "participantes", width: 15 },
+      { header: "Total Predicciones", key: "predicciones", width: 20 },
+    ];
+    wsSummary.getRow(1).eachCell((c) => {
+      c.fill = headerFill;
+      c.font = headerFont;
+    });
+
+    for (const phase of phases) {
+      const campaignFilter = campaign_id ? { phase: { campaign_id } } : {};
+      const registrations = await this.prisma.registration.findMany({
+        where: {
+          source: 'WEB' as any,
+          employee_id: { not: null },
+          phase_id: phase.id,
+          ...campaignFilter,
+        },
+        include: {
+          employee: { select: { id: true, code: true, nombres: true, apellidos: true } },
+          predictions: {
+            include: { match: true },
+            orderBy: { id: "asc" },
+          },
+        },
+        orderBy: { registered_at: "desc" },
+      });
+
+      const empMap = new Map<string, typeof registrations>();
+      registrations.forEach((r) => {
+        if (!r.employee_id) return;
+        const list = empMap.get(r.employee_id) || [];
+        list.push(r);
+        empMap.set(r.employee_id, list);
+      });
+
+      const totalPreds = registrations.reduce((s, r) => s + (r.predictions?.length || 0), 0);
+      wsSummary.addRow({
+        fase: phase.name,
+        participantes: empMap.size,
+        predicciones: totalPreds,
+      });
+
+      // Collect all unique matches in order (date asc, match_id asc)
+      const matchOrder = new Map<number, string>();
+      registrations.forEach(r => {
+        (r.predictions || []).forEach(p => {
+          if (p.match?.date && !matchOrder.has(p.match_id)) {
+            matchOrder.set(p.match_id, p.match.date);
+          }
+        });
+      });
+      const sortedMatches = [...matchOrder.entries()].sort((a, b) => {
+        const dateCmp = a[1].localeCompare(b[1]);
+        if (dateCmp !== 0) return dateCmp;
+        return a[0] - b[0];
+      });
+
+      const ws = workbook.addWorksheet(phase.name.substring(0, 31));
+      const columns: any[] = [
+        { header: "Código", key: "code", width: 15 },
+        { header: "Nombre", key: "nombre", width: 25 },
+        { header: "Puntos", key: "puntos", width: 10 },
+      ];
+      const dateCounts = new Map<string, number>();
+      sortedMatches.forEach(([matchId, date]) => {
+        const count = dateCounts.get(date) || 0;
+        dateCounts.set(date, count + 1);
+        const header = count === 0 ? date : `${date} (${count + 1})`;
+        columns.push({ header, key: `m_${matchId}`, width: 32 });
+      });
+      ws.columns = columns;
+      ws.getRow(1).eachCell((c) => {
+        c.fill = headerFill;
+        c.font = headerFont;
+        c.alignment = { vertical: "middle", horizontal: "center" };
+      });
+      ws.getRow(1).height = 24;
+
+      const sortedEmps = [...empMap.entries()].sort((a, b) => {
+        const ptsA = a[1].reduce((s, r) => s + (r.total_points || 0), 0);
+        const ptsB = b[1].reduce((s, r) => s + (r.total_points || 0), 0);
+        if (ptsB !== ptsA) return ptsB - ptsA;
+        return (a[1][0].employee?.code || "").localeCompare(b[1][0].employee?.code || "");
+      });
+
+      for (const [, regs] of sortedEmps) {
+        const emp = regs[0].employee;
+        const totalPoints = regs.reduce((s, r) => s + (r.total_points || 0), 0);
+
+        const predMap = new Map<number, any>();
+        regs.forEach(r => {
+          (r.predictions || []).forEach(p => {
+            if (p.match_id) predMap.set(p.match_id, p);
+          });
+        });
+
+        const rowData: any = {
+          code: emp?.code || "",
+          nombre: `${emp?.nombres || ""} ${emp?.apellidos || ""}`.trim(),
+          puntos: totalPoints,
+        };
+        sortedMatches.forEach(([matchId]) => {
+          const p = predMap.get(matchId);
+          rowData[`m_${matchId}`] = p ? fmt(p) : "";
+        });
+
+        const row = ws.addRow(rowData);
+        sortedMatches.forEach(([matchId], i) => {
+          const p = predMap.get(matchId);
+          if (p) {
+            const cell = row.getCell(4 + i);
+            if (p.is_correct) cell.font = greenFont;
+            else if (p.points && p.points > 0) cell.font = yellowFont;
+            else cell.font = redFont;
+          }
+        });
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const phaseName = phases.length === 1 ? phases[0].name.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s]/g, "").trim() : "todas_las_fases";
+    const dateStr = new Date().toISOString().split("T")[0];
+    return {
+      buffer: buffer as unknown as Buffer,
+      filename: `reporte-${phaseName.replace(/\s+/g, "-")}-${dateStr.replace(/-/g, "")}.xlsx`,
+    };
   }
 }

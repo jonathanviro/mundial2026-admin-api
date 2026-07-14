@@ -29,6 +29,7 @@ async function bootstrap() {
     origin: originFn,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-totem-key'],
+    exposedHeaders: ['Content-Disposition'],
     credentials: true,
   });
 

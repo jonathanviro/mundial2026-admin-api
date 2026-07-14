@@ -19,6 +19,7 @@ import {
 import { Type } from "class-transformer";
 import { randomUUID } from "crypto";
 import { RegistrationSource } from "@prisma/client";
+import * as ExcelJS from "exceljs";
 
 function getTomorrowDateString(): string {
   const tomorrow = new Date();
