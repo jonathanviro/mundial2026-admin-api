@@ -272,6 +272,7 @@ export class RegistrationsService {
       allPredKeys.forEach(k => columns.push({ header: `Predicción ${k}`, key: `pred${k}`, width: 30 }));
       columns.push({ header: 'Aciertos', key: 'aciertos', width: 10 });
       columns.push({ header: 'Ganador', key: 'ganador', width: 10 });
+      columns.push({ header: 'Campeón', key: 'champion_team', width: 20 });
       ws.columns = columns;
 
       ws.getRow(1).eachCell(c => { c.fill = headerFill; c.font = headerFont; c.alignment = { vertical: 'middle', horizontal: 'center' }; });
@@ -292,6 +293,7 @@ export class RegistrationsService {
           fecha: reg.registered_at ? new Date(reg.registered_at).toLocaleString('es-EC') : '',
           aciertos: reg.correct_predictions,
           ganador: reg.is_winner ? '🏆 SÍ' : 'No',
+          champion_team: reg.champion_team || '',
         };
         preds.forEach((p, i) => { rowData[`pred${i + 1}`] = fmt(p); });
         const row = ws.addRow(rowData);
@@ -322,7 +324,7 @@ export class RegistrationsService {
         webCols.push({ header: `Predicción ${k}`, key: `pred${k}`, width: 30 });
         totemCols.push({ header: `Predicción ${k}`, key: `pred${k}`, width: 30 });
       });
-      totemCols.push({ header: 'Aciertos', key: 'aciertos', width: 10 }, { header: 'Ganador', key: 'ganador', width: 10 });
+      totemCols.push({ header: 'Aciertos', key: 'aciertos', width: 10 }, { header: 'Ganador', key: 'ganador', width: 10 }, { header: 'Campeón', key: 'champion_team', width: 20 });
 
       wsWeb.columns = webCols;
       wsTotem.columns = totemCols;
@@ -352,6 +354,7 @@ export class RegistrationsService {
             totem: reg.totem?.name || '', fase: reg.phase?.name,
             fecha: reg.registered_at ? new Date(reg.registered_at).toLocaleString('es-EC') : '',
             aciertos: reg.correct_predictions, ganador: reg.is_winner ? '🏆 SÍ' : 'No',
+            champion_team: reg.champion_team || '',
           };
           preds.forEach((p, i) => { rowData[`pred${i + 1}`] = fmt(p); });
           const row = wsTotem.addRow(rowData);
